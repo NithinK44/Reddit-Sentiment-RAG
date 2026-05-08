@@ -77,9 +77,10 @@ def flatten_comments(
                 "post_title": post_meta.get("title", ""),
                 "post_url": post_meta.get("url", ""),
                 "post_date": post_meta.get("date", ""),
-                "post_score": post_meta.get("score", 0),
+                "post_score": int(post_meta.get("score", 0)),
                 "post_sort": post_meta.get("sort", ""),
-                "comment_score": score,
+                "flair": post_meta.get("flair", "Unknown"),
+                "comment_score": int(score),
                 "depth": depth,
                 "type": "comment"
             }
@@ -125,9 +126,10 @@ def load_reddit_data(data_dir: Path) -> Generator[dict, None, None]:
                         "post_title": meta.get("title", ""),
                         "post_url": meta.get("url", ""),
                         "post_date": meta.get("date", ""),
-                        "post_score": meta.get("score", 0),
+                        "post_score": int(meta.get("score", 0)),
                         "post_sort": meta.get("sort", ""),
-                        "comment_score": meta.get("score", 0),
+                        "flair": meta.get("flair", "Unknown"),
+                        "comment_score": int(meta.get("score", 0)),
                         "depth": 0,
                         "type": "post"
                     }

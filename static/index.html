@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reddit Sentiment Intelligence</title>
+    <meta name="description" content="AI-powered multi-agent sentiment analysis for Reddit communities">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        :root{
+            --bg-primary:#0a0a1a;--bg-secondary:#111128;--bg-card:rgba(255,255,255,0.04);
+            --border:rgba(255,255,255,0.08);--text-primary:#f0f0ff;--text-secondary:#8888aa;
+            --accent-purple:#8b5cf6;--accent-indigo:#6366f1;--accent-cyan:#06b6d4;
+            --accent-green:#10b981;--accent-red:#ef4444;--accent-amber:#f59e0b;
+            --glass:rgba(255,255,255,0.03);--glass-border:rgba(255,255,255,0.06);
+            --radius:16px;--radius-sm:10px;
+        }
+        body{font-family:'Inter',sans-serif;background:var(--bg-primary);color:var(--text-primary);min-height:100vh;overflow-x:hidden}
+        
+        /* Animated background */
+        .bg-orbs{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0}
+        .orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:0.15;animation:float 20s infinite ease-in-out}
+        .orb-1{width:600px;height:600px;background:var(--accent-purple);top:-200px;left:-100px;animation-delay:0s}
+        .orb-2{width:500px;height:500px;background:var(--accent-indigo);bottom:-150px;right:-100px;animation-delay:-7s}
+        .orb-3{width:400px;height:400px;background:var(--accent-cyan);top:50%;left:50%;transform:translate(-50%,-50%);animation-delay:-14s}
+        @keyframes float{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-40px) scale(1.05)}}
+        
+        .container{max-width:1200px;margin:0 auto;padding:24px;position:relative;z-index:1}
+        
+        /* Header */
+        .header{text-align:center;padding:48px 0 32px}
+        .header h1{font-size:2.8rem;font-weight:800;background:linear-gradient(135deg,var(--accent-purple),var(--accent-cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-1px;margin-bottom:8px}
+        .header p{color:var(--text-secondary);font-size:1rem;font-weight:300}
+        .header .badge{display:inline-block;margin-top:12px;padding:4px 14px;border-radius:20px;background:rgba(139,92,246,0.15);border:1px solid rgba(139,92,246,0.3);color:var(--accent-purple);font-size:0.75rem;font-weight:600;letter-spacing:1px;text-transform:uppercase}
+        
+        /* Glass card */
+        .card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;backdrop-filter:blur(20px);transition:all 0.3s ease}
+        .card:hover{border-color:rgba(255,255,255,0.12);box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+        
+        /* Search */
+        .search-section{margin-bottom:32px}
+        .search-box{display:flex;gap:12px;align-items:center}
+        .search-input{flex:1;padding:16px 20px;border-radius:var(--radius);border:1px solid var(--border);background:var(--glass);color:var(--text-primary);font-size:1rem;font-family:'Inter',sans-serif;outline:none;transition:all 0.3s}
+        .search-input:focus{border-color:var(--accent-purple);box-shadow:0 0 0 3px rgba(139,92,246,0.15)}
+        .search-input::placeholder{color:var(--text-secondary)}
+        .mode-toggle{display:flex;gap:4px;padding:4px;background:var(--glass);border-radius:var(--radius-sm);border:1px solid var(--border)}
+        .mode-btn{padding:10px 16px;border:none;border-radius:8px;cursor:pointer;font-size:0.8rem;font-weight:600;font-family:'Inter',sans-serif;transition:all 0.2s;background:transparent;color:var(--text-secondary)}
+        .mode-btn.active{background:var(--accent-purple);color:white}
+        .search-btn{padding:16px 32px;border:none;border-radius:var(--radius);background:linear-gradient(135deg,var(--accent-purple),var(--accent-indigo));color:white;font-size:1rem;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s;white-space:nowrap}
+        .search-btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(99,102,241,0.4)}
+        .search-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+        .search-btn .spinner{display:none;width:20px;height:20px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.8s linear infinite}
+        .search-btn.loading .spinner{display:inline-block}
+        .search-btn.loading .btn-text{display:none}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        
+        /* Stats grid */
+        .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:32px}
+        .stat-card{text-align:center;padding:20px}
+        .stat-card .stat-value{font-size:2rem;font-weight:800;background:linear-gradient(135deg,var(--accent-cyan),var(--accent-green));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+        .stat-card .stat-label{color:var(--text-secondary);font-size:0.8rem;margin-top:4px;text-transform:uppercase;letter-spacing:1px}
+        .stat-card .stat-icon{font-size:1.5rem;margin-bottom:8px}
+        
+        /* Results */
+        .results-section{display:none;animation:fadeIn 0.5s ease}
+        .results-section.visible{display:block}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+        
+        /* Sentiment gauge */
+        .gauge-container{text-align:center;padding:32px 0}
+        .gauge-label{font-size:1.8rem;font-weight:700;margin-bottom:8px}
+        .gauge-confidence{color:var(--text-secondary);font-size:0.9rem}
+        .sentiment-badge{display:inline-block;padding:8px 20px;border-radius:24px;font-weight:700;font-size:1rem;margin-top:12px}
+        .sentiment-badge.positive{background:rgba(16,185,129,0.15);color:var(--accent-green);border:1px solid rgba(16,185,129,0.3)}
+        .sentiment-badge.negative{background:rgba(239,68,68,0.15);color:var(--accent-red);border:1px solid rgba(239,68,68,0.3)}
+        .sentiment-badge.mixed{background:rgba(245,158,11,0.15);color:var(--accent-amber);border:1px solid rgba(245,158,11,0.3)}
+        .sentiment-badge.neutral{background:rgba(136,136,170,0.15);color:var(--text-secondary);border:1px solid rgba(136,136,170,0.3)}
+        
+        /* Summary */
+        .summary-text{font-size:1.05rem;line-height:1.8;color:var(--text-secondary);padding:16px 0}
+        
+        /* Themes */
+        .themes-grid{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+        .theme-pill{padding:8px 16px;border-radius:20px;font-size:0.85rem;font-weight:500;border:1px solid var(--border);background:var(--glass);transition:all 0.2s;cursor:default}
+        .theme-pill:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.2)}
+        .theme-pill .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+        .dot-positive{background:var(--accent-green)}.dot-negative{background:var(--accent-red)}.dot-mixed{background:var(--accent-amber)}.dot-neutral{background:var(--text-secondary)}
+        
+        /* Quotes */
+        .quote-card{padding:20px;margin:12px 0;border-left:3px solid var(--accent-purple);background:rgba(139,92,246,0.05);border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+        .quote-text{font-style:italic;color:var(--text-primary);line-height:1.6;margin-bottom:8px}
+        .quote-meta{display:flex;gap:12px;color:var(--text-secondary);font-size:0.8rem}
+        .quote-score{color:var(--accent-cyan);font-weight:600;font-family:'JetBrains Mono',monospace}
+        
+        /* Breakdown bars */
+        .breakdown-bar{display:flex;height:12px;border-radius:6px;overflow:hidden;margin:12px 0;background:var(--glass)}
+        .bar-positive{background:var(--accent-green);transition:width 1s ease}.bar-negative{background:var(--accent-red);transition:width 1s ease}.bar-neutral{background:var(--text-secondary);transition:width 1s ease}
+        .breakdown-labels{display:flex;justify-content:space-between;font-size:0.8rem;color:var(--text-secondary)}
+        .emotions-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+        .emotion-tag{padding:4px 12px;border-radius:12px;font-size:0.75rem;background:rgba(99,102,241,0.1);color:var(--accent-indigo);border:1px solid rgba(99,102,241,0.2);text-transform:capitalize}
+        
+        /* Quick result */
+        .quick-result{line-height:1.8;color:var(--text-secondary);white-space:pre-wrap}
+        
+        /* Section titles */
+        .section-title{font-size:1rem;font-weight:700;color:var(--text-primary);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+        .section-title .icon{font-size:1.2rem}
+        
+        /* History */
+        .history-section{margin-top:32px}
+        .history-item{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-radius:var(--radius-sm);background:var(--glass);border:1px solid var(--glass-border);margin:8px 0;cursor:pointer;transition:all 0.2s}
+        .history-item:hover{background:rgba(255,255,255,0.06);border-color:var(--border)}
+        .history-query{font-size:0.9rem;font-weight:500;flex:1}
+        .history-time{font-size:0.75rem;color:var(--text-secondary);font-family:'JetBrains Mono',monospace}
+        .history-sentiment{font-size:0.7rem;padding:3px 10px;border-radius:10px;font-weight:600;margin-left:8px}
+        
+        /* Layout */
+        .results-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+        @media(max-width:768px){.results-grid{grid-template-columns:1fr}.search-box{flex-direction:column}.header h1{font-size:2rem}}
+        
+        /* Skeleton loading */
+        .skeleton{background:linear-gradient(90deg,var(--glass) 25%,rgba(255,255,255,0.06) 50%,var(--glass) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px;height:20px;margin:8px 0}
+        @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+        .skeleton.h-lg{height:40px;width:60%}.skeleton.h-md{height:24px;width:80%}.skeleton.h-sm{height:16px;width:90%}
+        
+        /* No API key warning */
+        .api-warning{padding:16px 20px;border-radius:var(--radius-sm);background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:var(--accent-amber);font-size:0.9rem;margin-bottom:24px;display:none}
+        .api-warning.visible{display:block}
+        .api-warning code{background:rgba(0,0,0,0.3);padding:2px 8px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:0.8rem}
+        
+        /* Error */
+        .error-msg{padding:16px;border-radius:var(--radius-sm);background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--accent-red);display:none;margin-top:16px}
+        .error-msg.visible{display:block}
+    </style>
+</head>
+<body>
+    <div class="bg-orbs"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
+    
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>Reddit Sentiment Intelligence</h1>
+            <p>AI-powered multi-agent analysis of fan communities</p>
+            <span class="badge">r/ManchesterUnited</span>
+        </header>
+
+        <!-- API Warning -->
+        <div id="apiWarning" class="api-warning">
+            ⚠️ <strong>API Key Required</strong> — Set your <code>GOOGLE_API_KEY</code> in the <code>.env</code> file to enable analysis. 
+            Get a free key from <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent-amber)">Google AI Studio</a>.
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="card stat-card"><div class="stat-icon">📄</div><div class="stat-value" id="statDocs">—</div><div class="stat-label">Documents Indexed</div></div>
+            <div class="card stat-card"><div class="stat-icon">📅</div><div class="stat-value" id="statDate">—</div><div class="stat-label">Date Range</div></div>
+            <div class="card stat-card"><div class="stat-icon">⬆️</div><div class="stat-value" id="statScore">—</div><div class="stat-label">Avg Score</div></div>
+            <div class="card stat-card"><div class="stat-icon">🏷️</div><div class="stat-value" id="statFlairs">—</div><div class="stat-label">Flair Types</div></div>
+        </div>
+
+        <!-- Search -->
+        <div class="search-section card">
+            <div class="search-box">
+                <input type="text" id="searchInput" class="search-input" placeholder="What do fans think about the manager's tactics?" />
+                <div class="mode-toggle">
+                    <button class="mode-btn" data-mode="quick" onclick="setMode('quick')">⚡ Quick</button>
+                    <button class="mode-btn active" data-mode="deep" onclick="setMode('deep')">🧠 Deep</button>
+                </div>
+                <button id="searchBtn" class="search-btn" onclick="runAnalysis()">
+                    <span class="btn-text">Analyze</span>
+                    <div class="spinner"></div>
+                </button>
+            </div>
+        </div>
+
+        <!-- Error -->
+        <div id="errorMsg" class="error-msg"></div>
+
+        <!-- Loading skeleton -->
+        <div id="loadingSkeleton" class="card" style="display:none;margin-bottom:32px">
+            <div class="skeleton h-lg"></div>
+            <div class="skeleton h-md"></div>
+            <div class="skeleton h-sm"></div>
+            <div class="skeleton h-sm"></div>
+            <div class="skeleton h-md" style="margin-top:24px"></div>
+            <div class="skeleton h-sm"></div>
+            <div class="skeleton h-sm"></div>
+        </div>
+
+        <!-- Results: Quick Mode -->
+        <div id="quickResults" class="results-section">
+            <div class="card">
+                <div class="section-title"><span class="icon">⚡</span> Quick Analysis</div>
+                <div id="quickAnswer" class="quick-result"></div>
+            </div>
+        </div>
+
+        <!-- Results: Deep Mode -->
+        <div id="deepResults" class="results-section">
+            <!-- Sentiment Overview -->
+            <div class="card" style="margin-bottom:16px">
+                <div class="gauge-container">
+                    <div class="gauge-label" id="sentimentLabel">—</div>
+                    <div id="sentimentBadge" class="sentiment-badge neutral">—</div>
+                    <div class="gauge-confidence" id="confidenceText"></div>
+                </div>
+                <div class="summary-text" id="summaryText"></div>
+            </div>
+            
+            <div class="results-grid">
+                <!-- Themes -->
+                <div class="card">
+                    <div class="section-title"><span class="icon">🎯</span> Key Themes</div>
+                    <div id="themesContainer" class="themes-grid"></div>
+                </div>
+                
+                <!-- Breakdown -->
+                <div class="card">
+                    <div class="section-title"><span class="icon">📊</span> Sentiment Breakdown</div>
+                    <div class="breakdown-bar">
+                        <div id="barPositive" class="bar-positive" style="width:0%"></div>
+                        <div id="barNegative" class="bar-negative" style="width:0%"></div>
+                        <div id="barNeutral" class="bar-neutral" style="width:0%"></div>
+                    </div>
+                    <div class="breakdown-labels">
+                        <span>🟢 <span id="pctPositive">0</span>% Positive</span>
+                        <span>🔴 <span id="pctNegative">0</span>% Negative</span>
+                        <span>⚪ <span id="pctNeutral">0</span>% Neutral</span>
+                    </div>
+                    <div class="section-title" style="margin-top:20px"><span class="icon">💭</span> Emotions</div>
+                    <div id="emotionsContainer" class="emotions-list"></div>
+                    <div id="sarcasmBadge" style="margin-top:12px;font-size:0.85rem;color:var(--accent-amber);display:none">⚠️ Sarcasm/irony detected in comments</div>
+                </div>
+            </div>
+            
+            <!-- Quotes -->
+            <div class="card" style="margin-top:16px">
+                <div class="section-title"><span class="icon">💬</span> Notable Quotes</div>
+                <div id="quotesContainer"></div>
+            </div>
+            
+            <!-- Meta -->
+            <div class="card" style="margin-top:16px">
+                <div class="section-title"><span class="icon">ℹ️</span> Report Metadata</div>
+                <div id="metaInfo" style="font-size:0.85rem;color:var(--text-secondary);font-family:'JetBrains Mono',monospace"></div>
+            </div>
+        </div>
+
+        <!-- History -->
+        <div class="history-section card" style="margin-top:32px">
+            <div class="section-title"><span class="icon">🕐</span> Recent Analyses</div>
+            <div id="historyContainer"><p style="color:var(--text-secondary);font-size:0.9rem">No analyses yet. Try a query above!</p></div>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'deep';
+        
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchStats();
+            fetchHistory();
+            document.getElementById('searchInput').addEventListener('keydown', e => { if(e.key === 'Enter') runAnalysis(); });
+        });
+        
+        function setMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+        }
+        
+        async function fetchStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                document.getElementById('statDocs').textContent = data.total_documents?.toLocaleString() || '0';
+                document.getElementById('statDate').textContent = data.date_range ? `${data.date_range.earliest?.slice(5) || '?'} → ${data.date_range.latest?.slice(5) || '?'}` : '—';
+                document.getElementById('statScore').textContent = data.avg_score || '0';
+                document.getElementById('statFlairs').textContent = data.flair_distribution ? Object.keys(data.flair_distribution).length : '0';
+                if (!data.api_key_configured) document.getElementById('apiWarning').classList.add('visible');
+            } catch(e) { console.error('Stats error:', e); }
+        }
+        
+        async function fetchHistory() {
+            try {
+                const res = await fetch('/api/history');
+                const data = await res.json();
+                const container = document.getElementById('historyContainer');
+                if (!data.history?.length) return;
+                container.innerHTML = data.history.slice(0, 10).map(h => {
+                    const sentClass = (h.sentiment || '').toLowerCase();
+                    const time = new Date(h.timestamp).toLocaleString();
+                    return `<div class="history-item" onclick="rerunQuery('${h.query.replace(/'/g,"\\'")}')">
+                        <span class="history-query">${h.query}</span>
+                        <span class="history-time">${time}</span>
+                        ${h.sentiment !== 'N/A' ? `<span class="history-sentiment sentiment-badge ${sentClass}">${h.sentiment}</span>` : ''}
+                    </div>`;
+                }).join('');
+            } catch(e) { console.error('History error:', e); }
+        }
+        
+        function rerunQuery(query) {
+            document.getElementById('searchInput').value = query;
+            runAnalysis();
+        }
+        
+        async function runAnalysis() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+            
+            const btn = document.getElementById('searchBtn');
+            const skeleton = document.getElementById('loadingSkeleton');
+            const errorDiv = document.getElementById('errorMsg');
+            
+            btn.classList.add('loading');
+            btn.disabled = true;
+            skeleton.style.display = 'block';
+            errorDiv.classList.remove('visible');
+            document.getElementById('quickResults').classList.remove('visible');
+            document.getElementById('deepResults').classList.remove('visible');
+            
+            try {
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ query, mode: currentMode })
+                });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Analysis failed');
+                }
+                
+                const data = await res.json();
+                
+                if (data.type === 'quick') {
+                    renderQuickResult(data);
+                } else {
+                    renderDeepResult(data);
+                }
+                
+                fetchHistory();
+            } catch(e) {
+                errorDiv.textContent = `❌ ${e.message}`;
+                errorDiv.classList.add('visible');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                skeleton.style.display = 'none';
+            }
+        }
+        
+        function renderQuickResult(data) {
+            document.getElementById('quickAnswer').textContent = data.answer;
+            document.getElementById('quickResults').classList.add('visible');
+        }
+        
+        function renderDeepResult(data) {
+            const r = data.report;
+            if (!r) return;
+            
+            // Sentiment badge
+            const sentClass = (r.overall_sentiment || 'neutral').toLowerCase();
+            document.getElementById('sentimentLabel').textContent = 'Sentiment Analysis';
+            const badge = document.getElementById('sentimentBadge');
+            badge.textContent = r.overall_sentiment;
+            badge.className = `sentiment-badge ${sentClass}`;
+            document.getElementById('confidenceText').textContent = `Confidence: ${(r.confidence * 100).toFixed(0)}%`;
+            
+            // Summary with typewriter
+            typewriter(document.getElementById('summaryText'), r.summary || '');
+            
+            // Themes
+            const themesEl = document.getElementById('themesContainer');
+            themesEl.innerHTML = (r.key_themes || []).map(t => {
+                const dotClass = `dot-${(t.sentiment || 'neutral').toLowerCase()}`;
+                return `<div class="theme-pill" title="${t.description || ''}"><span class="dot ${dotClass}"></span>${t.name}</div>`;
+            }).join('');
+            
+            // Breakdown
+            const bd = r.sentiment_breakdown || {};
+            setTimeout(() => {
+                document.getElementById('barPositive').style.width = (bd.positive_pct || 0) + '%';
+                document.getElementById('barNegative').style.width = (bd.negative_pct || 0) + '%';
+                document.getElementById('barNeutral').style.width = (bd.neutral_pct || 0) + '%';
+            }, 100);
+            document.getElementById('pctPositive').textContent = bd.positive_pct || 0;
+            document.getElementById('pctNegative').textContent = bd.negative_pct || 0;
+            document.getElementById('pctNeutral').textContent = bd.neutral_pct || 0;
+            
+            // Emotions
+            document.getElementById('emotionsContainer').innerHTML = (bd.dominant_emotions || []).map(e => `<span class="emotion-tag">${e}</span>`).join('');
+            document.getElementById('sarcasmBadge').style.display = bd.sarcasm_detected ? 'block' : 'none';
+            
+            // Quotes
+            const quotesEl = document.getElementById('quotesContainer');
+            quotesEl.innerHTML = (r.notable_quotes || []).map(q => `
+                <div class="quote-card">
+                    <div class="quote-text">"${q.text}"</div>
+                    <div class="quote-meta">
+                        <span class="quote-score">⬆️ ${q.score}</span>
+                        <span>${q.context || ''}</span>
+                        <span class="sentiment-badge ${(q.sentiment||'neutral').toLowerCase()}" style="font-size:0.7rem;padding:2px 8px">${q.sentiment}</span>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Meta
+            const meta = r.meta || {};
+            document.getElementById('metaInfo').innerHTML = `📄 ${meta.documents_analyzed || 0} docs analyzed &nbsp;|&nbsp; 🤖 ${meta.model_used || 'N/A'} &nbsp;|&nbsp; 🔀 ${meta.retrieval_strategy || 'N/A'} &nbsp;|&nbsp; 🕐 ${meta.timestamp ? new Date(meta.timestamp).toLocaleString() : 'N/A'}`;
+            
+            document.getElementById('deepResults').classList.add('visible');
+        }
+        
+        function typewriter(el, text) {
+            el.textContent = '';
+            let i = 0;
+            const interval = setInterval(() => {
+                if (i < text.length) { el.textContent += text[i]; i++; }
+                else clearInterval(interval);
+            }, 12);
+        }
+    </script>
+</body>
+</html>
