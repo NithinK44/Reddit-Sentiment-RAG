@@ -4,8 +4,8 @@ from app import analyze_sentiment, AnalyzeRequest
 
 async def main():
     try:
-        req = AnalyzeRequest(query="test", mode="quick")
-        res = await analyze_sentiment(req)
+        req = AnalyzeRequest(query="test", mode="deep")
+        res = analyze_sentiment(req)
         print("Success:", res)
     except Exception as e:
         print("Failed!")

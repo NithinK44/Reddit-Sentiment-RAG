@@ -123,7 +123,7 @@ async def get_stats():
 
 
 @app.post("/api/analyze")
-async def analyze_sentiment(request: AnalyzeRequest):
+def analyze_sentiment(request: AnalyzeRequest):
     """Run full multi-agent sentiment analysis."""
     if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_api_key_here":
         raise HTTPException(
