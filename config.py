@@ -6,11 +6,16 @@ live here so every module imports from one place.
 """
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# Fix encoding for Windows console (emojis)
+if sys.stdout and hasattr(sys.stdout, 'reconfigure') and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 # ============================================================================
 # PATHS & CONSTANTS
