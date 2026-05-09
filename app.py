@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from config import get_chroma_collection, GOOGLE_API_KEY
+from config import get_chroma_collection, OPENROUTER_API_KEY
 
 # ============================================================================
 # APP INITIALIZATION
@@ -116,7 +116,7 @@ async def get_stats():
             },
             "flair_distribution": flairs,
             "avg_score": round(sum(scores) / len(scores), 1) if scores else 0,
-            "api_key_configured": bool(GOOGLE_API_KEY and GOOGLE_API_KEY != "your_api_key_here"),
+            "api_key_configured": bool(OPENROUTER_API_KEY and OPENROUTER_API_KEY != "your_api_key_here"),
         }
     except Exception as e:
         return {"error": str(e), "total_documents": 0}
@@ -125,10 +125,10 @@ async def get_stats():
 @app.post("/api/analyze")
 async def analyze_sentiment(request: AnalyzeRequest):
     """Run full multi-agent sentiment analysis."""
-    if not GOOGLE_API_KEY or GOOGLE_API_KEY == "your_api_key_here":
+    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_api_key_here":
         raise HTTPException(
             status_code=400,
-            detail="GOOGLE_API_KEY not configured. Set it in your .env file."
+            detail="OPENROUTER_API_KEY not configured. Set it in your .env file."
         )
     
     try:
@@ -197,7 +197,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"\n  Dashboard: http://localhost:8000")
     print(f"  API Docs:  http://localhost:8000/docs")
-    api_status = "Configured" if GOOGLE_API_KEY and GOOGLE_API_KEY != "your_api_key_here" else "Not set"
+    api_status = "Configured" if OPENROUTER_API_KEY and OPENROUTER_API_KEY != "your_api_key_here" else "Not set"
     print(f"  API Key:   {api_status}")
     print(f"\n{'=' * 60}\n")
     

@@ -86,7 +86,7 @@ pip install -r requirements.txt
 
 # Configure API key
 cp .env.example .env
-# Edit .env and add your GOOGLE_API_KEY
+# Edit .env and add your OPENROUTER_API_KEY
 ```
 
 ### To Embed New Data:

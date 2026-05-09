@@ -16,7 +16,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langgraph.graph import StateGraph, END
 
-from config import get_llm
+from config import get_llm, LLM_MODEL
 from retriever import hybrid_retrieve
 from schemas import SentimentReport, ReportMeta
 from generator import format_docs
@@ -239,7 +239,7 @@ def synthesize(state: SentimentState) -> dict:
             "timestamp": datetime.now().isoformat(),
             "documents_analyzed": state.get("doc_count", 0),
             "retrieval_strategy": state.get("retrieval_strategy", "hybrid"),
-            "model_used": "gemini-2.0-flash",
+            "model_used": LLM_MODEL,
         }
         
         # Validate with Pydantic
@@ -269,7 +269,7 @@ def synthesize(state: SentimentState) -> dict:
                 "timestamp": datetime.now().isoformat(),
                 "documents_analyzed": state.get("doc_count", 0),
                 "retrieval_strategy": state.get("retrieval_strategy", "hybrid"),
-                "model_used": "gemini-2.0-flash",
+                "model_used": LLM_MODEL,
             },
         }
         return {"final_report": fallback_report}
@@ -341,16 +341,16 @@ def run_analysis(query: str) -> dict:
 
 if __name__ == "__main__":
     print("\n" + "=" * 60)
-    print("🧪 TESTING MULTI-AGENT PIPELINE")
+    print("TESTING MULTI-AGENT PIPELINE")
     print("=" * 60)
     
     test_query = "What is the sentiment about Amorim's management?"
-    print(f"\n🔎 Query: '{test_query}'\n")
+    print(f"\nQuery: '{test_query}'\n")
     
     try:
         report = run_analysis(test_query)
         print(json.dumps(report, indent=2))
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         import traceback
         traceback.print_exc()
