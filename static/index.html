@@ -147,8 +147,8 @@
 
         <!-- API Warning -->
         <div id="apiWarning" class="api-warning">
-            ⚠️ <strong>API Key Required</strong> — Set your <code>OPENROUTER_API_KEY</code> in the <code>.env</code> file to enable analysis. 
-            Get a key from <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent-amber)">OpenRouter</a>.
+            ⚠️ <strong>API Key Required</strong> — Set your <code id="missingKeyName">API_KEY</code> in the <code>.env</code> file to enable analysis. 
+            Get a key from <a id="keyLink" href="#" target="_blank" style="color:var(--accent-amber)">the provider</a>.
         </div>
 
         <!-- Stats -->
@@ -277,7 +277,23 @@
                 document.getElementById('statDate').textContent = data.date_range ? `${data.date_range.earliest?.slice(5) || '?'} → ${data.date_range.latest?.slice(5) || '?'}` : '—';
                 document.getElementById('statScore').textContent = data.avg_score || '0';
                 document.getElementById('statFlairs').textContent = data.flair_distribution ? Object.keys(data.flair_distribution).length : '0';
-                if (!data.api_key_configured) document.getElementById('apiWarning').classList.add('visible');
+                
+                if (!data.api_key_configured) {
+                    const warning = document.getElementById('apiWarning');
+                    const keyName = document.getElementById('missingKeyName');
+                    const keyLink = document.getElementById('keyLink');
+                    
+                    if (data.provider === 'Google AI Studio') {
+                        keyName.textContent = 'GOOGLE_API_KEY';
+                        keyLink.textContent = 'Google AI Studio';
+                        keyLink.href = 'https://aistudio.google.com/app/apikey';
+                    } else {
+                        keyName.textContent = 'OPENROUTER_API_KEY';
+                        keyLink.textContent = 'OpenRouter';
+                        keyLink.href = 'https://openrouter.ai/keys';
+                    }
+                    warning.classList.add('visible');
+                }
             } catch(e) { console.error('Stats error:', e); }
         }
         

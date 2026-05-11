@@ -1,11 +1,12 @@
 """
-FastAPI Application — Phase 4: Dashboard & API
-------------------------------------------------
-Serves both the REST API and the premium static dashboard.
+FastAPI Application — Reddit Sentiment Intelligence
+----------------------------------------------------
+Serves the REST API (scrape, embed, analyze) and the premium static dashboard.
 """
 
 import json
 import os
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -15,16 +16,17 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from config import get_chroma_collection, OPENROUTER_API_KEY
+import config
+# Ensure config status is printed on startup
+config.print_config_status()
 
-# ============================================================================
-# APP INITIALIZATION
-# ============================================================================
+# Import needed constants and settings
+from config import get_chroma_collection, OPENROUTER_API_KEY, GOOGLE_API_KEY, USE_GOOGLE_STUDIO
 
 app = FastAPI(
     title="Reddit Sentiment Intelligence",
     description="Multi-agent sentiment analysis for Reddit communities",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 # CORS for local development
@@ -37,7 +39,8 @@ app.add_middleware(
 )
 
 # History file path
-HISTORY_FILE = Path("./analysis_history.json")
+HISTORY_FILE = Path("./data/analysis_history.json")
+HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================
@@ -49,9 +52,11 @@ class AnalyzeRequest(BaseModel):
     mode: str = "deep"  # "deep" = multi-agent, "quick" = simple RAG
 
 
-class QuickSearchRequest(BaseModel):
-    query: str
-    n_results: int = 5
+class ScrapeRequest(BaseModel):
+    subreddit: str = "ManchesterUnited"
+    post_limit: int = 25
+    sort_by: str = "top"
+    time_filter: str = "year"
 
 
 # ============================================================================
@@ -71,14 +76,13 @@ def load_history() -> list:
 
 def save_history(history: list):
     """Save analysis history to disk."""
-    # Keep only last 50 entries
     history = history[-50:]
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=2, ensure_ascii=False)
 
 
 # ============================================================================
-# API ENDPOINTS
+# API ENDPOINTS — DASHBOARD
 # ============================================================================
 
 @app.get("/")
@@ -87,19 +91,20 @@ async def serve_dashboard():
     return FileResponse("static/index.html")
 
 
+# ============================================================================
+# API ENDPOINTS — STATS
+# ============================================================================
+
 @app.get("/api/stats")
 async def get_stats():
     """Get collection statistics."""
     try:
         collection = get_chroma_collection()
         count = collection.count()
-        
-        # Sample some metadata to get date range and flair distribution
+
         sample = collection.peek(limit=100)
-        dates = []
-        flairs = {}
-        scores = []
-        
+        dates, flairs, scores = [], {}, []
+
         if sample and sample.get("metadatas"):
             for meta in sample["metadatas"]:
                 if meta.get("post_date"):
@@ -107,7 +112,7 @@ async def get_stats():
                 flair = meta.get("flair", "Unknown")
                 flairs[flair] = flairs.get(flair, 0) + 1
                 scores.append(meta.get("comment_score", 0))
-        
+
         return {
             "total_documents": count,
             "date_range": {
@@ -116,25 +121,100 @@ async def get_stats():
             },
             "flair_distribution": flairs,
             "avg_score": round(sum(scores) / len(scores), 1) if scores else 0,
-            "api_key_configured": bool(OPENROUTER_API_KEY and OPENROUTER_API_KEY != "your_api_key_here"),
+            "api_key_configured": bool(GOOGLE_API_KEY) if USE_GOOGLE_STUDIO else bool(OPENROUTER_API_KEY and OPENROUTER_API_KEY != "your_api_key_here"),
+            "provider": "Google AI Studio" if USE_GOOGLE_STUDIO else "OpenRouter",
         }
     except Exception as e:
         return {"error": str(e), "total_documents": 0}
 
 
+# ============================================================================
+# API ENDPOINTS — SCRAPING
+# ============================================================================
+
+@app.post("/api/scrape")
+async def start_scrape(request: ScrapeRequest):
+    """Start a Reddit scraping job in the background."""
+    from scraper.reddit_scraper import scrape_subreddit, get_scrape_status
+
+    status = get_scrape_status()
+    if status["running"]:
+        raise HTTPException(status_code=409, detail="A scrape job is already running")
+
+    def run_scrape():
+        scrape_subreddit(
+            subreddit=request.subreddit,
+            post_limit=request.post_limit,
+            sort_by=request.sort_by,
+            time_filter=request.time_filter,
+        )
+
+    thread = threading.Thread(target=run_scrape, daemon=True)
+    thread.start()
+
+    return {"status": "started", "message": f"Scraping r/{request.subreddit} ({request.post_limit} posts)"}
+
+
+@app.get("/api/scrape/status")
+async def scrape_status():
+    """Get the current scrape job status."""
+    from scraper.reddit_scraper import get_scrape_status
+    return get_scrape_status()
+
+
+# ============================================================================
+# API ENDPOINTS — EMBEDDING
+# ============================================================================
+
+@app.post("/api/embed")
+async def start_embed():
+    """Trigger embedding of scraped data into ChromaDB."""
+    from rag.embedder import embed_to_chromadb, get_embed_status
+
+    status = get_embed_status()
+    if status["running"]:
+        raise HTTPException(status_code=409, detail="An embed job is already running")
+
+    def run_embed():
+        embed_to_chromadb()
+
+    thread = threading.Thread(target=run_embed, daemon=True)
+    thread.start()
+
+    return {"status": "started", "message": "Embedding scraped data into ChromaDB"}
+
+
+@app.get("/api/embed/status")
+async def embed_status():
+    """Get the current embed job status."""
+    from rag.embedder import get_embed_status
+    return get_embed_status()
+
+
+@app.get("/api/data/count")
+async def data_file_count():
+    """Count how many JSON files are ready for embedding."""
+    from rag.embedder import count_json_files
+    return {"count": count_json_files()}
+
+
+# ============================================================================
+# API ENDPOINTS — ANALYSIS
+# ============================================================================
+
 @app.post("/api/analyze")
 def analyze_sentiment(request: AnalyzeRequest):
     """Run full multi-agent sentiment analysis."""
-    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_api_key_here":
-        raise HTTPException(
-            status_code=400,
-            detail="OPENROUTER_API_KEY not configured. Set it in your .env file."
-        )
-    
+    if USE_GOOGLE_STUDIO:
+        if not GOOGLE_API_KEY:
+            raise HTTPException(status_code=400, detail="GOOGLE_API_KEY not configured. Set it in your .env file.")
+    else:
+        if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_api_key_here":
+            raise HTTPException(status_code=400, detail="OPENROUTER_API_KEY not configured. Set it in your .env file.")
+
     try:
         if request.mode == "quick":
-            # Phase 1: Simple RAG chain
-            from generator import query_rag
+            from rag.generator import query_rag
             result = query_rag(request.query, n_results=5)
             response = {
                 "type": "quick",
@@ -143,8 +223,7 @@ def analyze_sentiment(request: AnalyzeRequest):
                 "timestamp": datetime.now().isoformat(),
             }
         else:
-            # Phase 3: Full multi-agent pipeline
-            from agents import run_analysis
+            from agents.pipeline import run_analysis
             report = run_analysis(request.query)
             response = {
                 "type": "deep",
@@ -152,7 +231,7 @@ def analyze_sentiment(request: AnalyzeRequest):
                 "report": report,
                 "timestamp": datetime.now().isoformat(),
             }
-        
+
         # Save to history
         history = load_history()
         history_entry = {
@@ -163,9 +242,9 @@ def analyze_sentiment(request: AnalyzeRequest):
         }
         history.append(history_entry)
         save_history(history)
-        
+
         return response
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -174,14 +253,13 @@ def analyze_sentiment(request: AnalyzeRequest):
 async def get_history():
     """Get recent analysis history."""
     history = load_history()
-    return {"history": list(reversed(history))}  # Most recent first
+    return {"history": list(reversed(history))}
 
 
 # ============================================================================
 # STATIC FILES (must be mounted last to not override API routes)
 # ============================================================================
 
-# Create static directory if it doesn't exist
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -197,8 +275,11 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"\n  Dashboard: http://localhost:8000")
     print(f"  API Docs:  http://localhost:8000/docs")
-    api_status = "Configured" if OPENROUTER_API_KEY and OPENROUTER_API_KEY != "your_api_key_here" else "Not set"
+    if USE_GOOGLE_STUDIO:
+        api_status = "Configured (Google)" if GOOGLE_API_KEY else "Not set"
+    else:
+        api_status = "Configured (OpenRouter)" if OPENROUTER_API_KEY and OPENROUTER_API_KEY != "your_api_key_here" else "Not set"
     print(f"  API Key:   {api_status}")
     print(f"\n{'=' * 60}\n")
-    
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
