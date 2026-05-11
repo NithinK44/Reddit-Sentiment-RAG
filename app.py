@@ -39,7 +39,7 @@ app.add_middleware(
 )
 
 # History file path
-HISTORY_FILE = Path("./data/analysis_history.json")
+HISTORY_FILE = config.BASE_DIR / "data" / "analysis_history.json"
 HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 

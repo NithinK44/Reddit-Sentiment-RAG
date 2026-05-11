@@ -149,8 +149,26 @@ _scrape_state = {
 
 
 def get_scrape_status() -> dict:
-    """Return the current scrape job status."""
-    return dict(_scrape_state)
+    """Return the current scrape job status with progress calculation."""
+    status = dict(_scrape_state)
+    
+    # Calculate progress percentage
+    if status["total"] > 0:
+        status["progress"] = (status["completed"] / status["total"]) * 100
+    else:
+        status["progress"] = 0
+        
+    # Build human-readable message
+    if status["running"]:
+        status["message"] = f"Scraping r/{_scrape_state.get('subreddit', 'Reddit')}... ({status['completed']}/{status['total']})"
+    elif status["error"]:
+        status["message"] = f"Error: {status['error']}"
+    elif status["finished"]:
+        status["message"] = f"Finished! Scraped {status['completed']} posts."
+    else:
+        status["message"] = "Ready to scrape."
+        
+    return status
 
 
 def scrape_subreddit(
@@ -187,6 +205,7 @@ def scrape_subreddit(
     # Reset state
     _scrape_state = {
         "running": True,
+        "subreddit": subreddit,
         "total": post_limit,
         "completed": 0,
         "current_post": "",

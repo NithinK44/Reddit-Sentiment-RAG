@@ -83,7 +83,32 @@ _embed_state = {
 
 
 def get_embed_status():
-    return dict(_embed_state)
+    """Return the current embed job status with progress calculation."""
+    status = dict(_embed_state)
+    
+    # Calculate progress percentage
+    if status["total_docs"] > 0:
+        status["progress"] = (status["processed_docs"] / status["total_docs"]) * 100
+    elif status["total_files"] > 0 and not status["total_docs"]:
+        # If we have files but haven't counted docs yet, give a small progress
+        status["progress"] = 5
+    else:
+        status["progress"] = 0
+        
+    # Build human-readable message
+    if status["running"]:
+        if status["total_docs"] > 0:
+            status["message"] = f"Embedding documents... ({status['processed_docs']}/{status['total_docs']})"
+        else:
+            status["message"] = f"Processing {status['total_files']} files..."
+    elif status["error"]:
+        status["message"] = f"Error: {status['error']}"
+    elif status["finished"]:
+        status["message"] = f"Finished! Embedded {status['processed_docs']} documents."
+    else:
+        status["message"] = "Ready to embed."
+        
+    return status
 
 
 def embed_to_chromadb():
