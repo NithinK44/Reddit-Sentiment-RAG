@@ -5,7 +5,7 @@ Multi-Query and Self-Querying retrievers for casting a wider net
 and enabling natural language metadata filters.
 """
 
-from langchain_classic.retrievers.multi_query import MultiQueryRetriever
+from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain_core.prompts import PromptTemplate
 from langchain_core.documents import Document
 
