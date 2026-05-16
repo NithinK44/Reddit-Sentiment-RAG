@@ -111,16 +111,17 @@ def get_embed_status():
     return status
 
 
-def embed_to_chromadb():
+def embed_to_chromadb(subreddit: str = "reddit_sentiment"):
     global _embed_state
     if _embed_state["running"]:
         return {"error": "An embed job is already running"}
     _embed_state = {"running": True, "total_files": 0, "total_docs": 0, "processed_docs": 0, "error": None, "finished": False}
     try:
-        if not DATA_DIR.exists():
-            _embed_state.update(error=f"Data directory not found: {DATA_DIR}", running=False, finished=True)
+        data_path = DATA_DIR / subreddit
+        if not data_path.exists():
+            _embed_state.update(error=f"Data directory not found: {data_path}", running=False, finished=True)
             return {"error": _embed_state["error"]}
-        json_files = list(DATA_DIR.glob("*.json"))
+        json_files = list(data_path.glob("*.json"))
         _embed_state["total_files"] = len(json_files)
         if not json_files:
             _embed_state.update(error="No JSON files found. Scrape data first.", running=False, finished=True)
@@ -128,10 +129,10 @@ def embed_to_chromadb():
 
         client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
         embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
-        collection = client.get_or_create_collection(name=COLLECTION_NAME, embedding_function=embedding_fn, metadata={"hnsw:space": "cosine"})
+        collection = client.get_or_create_collection(name=subreddit, embedding_function=embedding_fn, metadata={"hnsw:space": "cosine"})
 
         documents, metadatas, ids, seen_ids = [], [], [], set()
-        for doc in load_reddit_data(DATA_DIR):
+        for doc in load_reddit_data(data_path):
             doc_id = generate_doc_id(doc["content"], doc["metadata"])
             if doc_id in seen_ids:
                 continue
@@ -158,8 +159,9 @@ def embed_to_chromadb():
         return {"error": str(e)}
 
 
-def count_json_files():
+def count_json_files(subreddit: str = ""):
     """Count available JSON files in the data directory."""
-    if not DATA_DIR.exists():
+    data_path = DATA_DIR / subreddit if subreddit else DATA_DIR
+    if not data_path.exists():
         return 0
-    return len(list(DATA_DIR.glob("*.json")))
+    return len(list(data_path.glob("*.json" if not subreddit else "**/*.json")))

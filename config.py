@@ -82,20 +82,25 @@ MAX_CHUNK_LENGTH = 8000
 # HELPER FUNCTIONS
 # ============================================================================
 
+_embedding_model_instance = None
+
 def get_embedding_function():
     """Get the Sentence Transformer embedding function for ChromaDB."""
-    from chromadb.utils import embedding_functions
-    return embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBEDDING_MODEL
-    )
+    global _embedding_model_instance
+    if _embedding_model_instance is None:
+        from chromadb.utils import embedding_functions
+        _embedding_model_instance = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=EMBEDDING_MODEL
+        )
+    return _embedding_model_instance
 
 
-def get_chroma_collection():
+def get_chroma_collection(collection_name=COLLECTION_NAME):
     """Get or create the ChromaDB collection with persistence."""
     import chromadb
     client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
     return client.get_or_create_collection(
-        name=COLLECTION_NAME,
+        name=collection_name,
         embedding_function=get_embedding_function(),
         metadata={"hnsw:space": "cosine"}
     )
@@ -134,15 +139,26 @@ def get_llm(temperature: float = 0.3):
         )
 
 
-def get_langchain_vectorstore():
+_langchain_embeddings_instance = None
+_vectorstores = {}
+
+def get_langchain_vectorstore(collection_name=COLLECTION_NAME):
     """Get the ChromaDB vectorstore as a LangChain-compatible object."""
+    global _langchain_embeddings_instance, _vectorstores
+    
+    if collection_name in _vectorstores:
+        return _vectorstores[collection_name]
+        
     from langchain_chroma import Chroma
     from langchain_huggingface import HuggingFaceEmbeddings
     
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    if _langchain_embeddings_instance is None:
+        _langchain_embeddings_instance = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
     
-    return Chroma(
-        collection_name=COLLECTION_NAME,
+    vs = Chroma(
+        collection_name=collection_name,
         persist_directory=str(CHROMA_PERSIST_DIR),
-        embedding_function=embeddings,
+        embedding_function=_langchain_embeddings_instance,
     )
+    _vectorstores[collection_name] = vs
+    return vs

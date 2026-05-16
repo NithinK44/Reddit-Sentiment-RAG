@@ -171,6 +171,66 @@ def get_scrape_status() -> dict:
     return status
 
 
+def validate_subreddit(subreddit: str) -> dict:
+    """
+    Check if a subreddit exists and return its metadata.
+    
+    Args:
+        subreddit: Name of the subreddit
+        
+    Returns:
+        Dict with success=True and metadata, or success=False and error message
+    """
+    url = f"https://www.reddit.com/r/{subreddit}/about.json"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                      'AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/120.0.0.0 Safari/537.36'
+    }
+    
+    session = requests.Session()
+    
+    # Try WARP proxy if available
+    proxy_config = get_proxy_config()
+    if proxy_config:
+        session.proxies.update({
+            'http': proxy_config['http'],
+            'https': proxy_config['https'],
+        })
+
+    try:
+        response = session.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 404:
+            return {"success": False, "error": f"Subreddit 'r/{subreddit}' does not exist."}
+        elif response.status_code == 403:
+            return {"success": False, "error": f"Subreddit 'r/{subreddit}' is private or banned."}
+        elif response.status_code != 200:
+            return {"success": False, "error": f"Reddit API error: {response.status_code}"}
+            
+        data = response.json()
+        if 'kind' not in data or data['kind'] != 't5':
+            return {"success": False, "error": f"Subreddit 'r/{subreddit}' does not exist."}
+            
+        sub_data = data.get('data', {})
+        if not sub_data.get('display_name'):
+            return {"success": False, "error": f"Subreddit 'r/{subreddit}' does not exist."}
+        
+        return {
+            "success": True,
+            "metadata": {
+                "name": sub_data.get('display_name'),
+                "title": sub_data.get('title'),
+                "subscribers": sub_data.get('subscribers'),
+                "description": sub_data.get('public_description'),
+                "created_utc": sub_data.get('created_utc'),
+                "over18": sub_data.get('over18'),
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def scrape_subreddit(
     subreddit: str,
     post_limit: int = 25,
@@ -200,7 +260,7 @@ def scrape_subreddit(
         depth_limits = {0: 25, 1: 15, 2: 10}
 
     # Clamp post_limit
-    post_limit = max(1, min(200, post_limit))
+    post_limit = max(1, min(250, post_limit))
 
     # Reset state
     _scrape_state = {
@@ -217,7 +277,7 @@ def scrape_subreddit(
 
     try:
         # Ensure output directory exists
-        output_dir = DATA_DIR
+        output_dir = DATA_DIR / subreddit
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Setup session
@@ -248,6 +308,8 @@ def scrape_subreddit(
             # Build listing URL
             if sort_by == 'top':
                 list_url = f"https://www.reddit.com/r/{subreddit}/top.json?t={time_filter}&limit=100"
+            elif sort_by == 'best':
+                list_url = f"https://www.reddit.com/r/{subreddit}/best.json?limit=100"
             else:
                 list_url = f"https://www.reddit.com/r/{subreddit}/{sort_by}.json?limit=100"
 
@@ -255,7 +317,11 @@ def scrape_subreddit(
                 list_url += f"&after={after}"
 
             try:
-                res = session.get(list_url, headers=headers, timeout=15).json()
+                response = session.get(list_url, headers=headers, timeout=15)
+                if response.status_code != 200:
+                    _scrape_state["error"] = f"Reddit API error: {response.status_code}"
+                    break
+                res = response.json()
                 if 'data' not in res:
                     break
                 posts = res['data']['children']
@@ -275,7 +341,7 @@ def scrape_subreddit(
                 thread_id = p_data['id']
                 thread_author = p_data.get('author')
 
-                safe_title = re.sub(r'[<>:"/\\|?*]', '', p_data['title'])[:50].strip()
+                safe_title = re.sub(r'[\x00-\x1f<>:"/\\|?*]', '', p_data['title'])[:50].strip()
                 filename = f"{thread_id}_{safe_title}.json"
                 file_path = output_dir / filename
 
@@ -292,7 +358,12 @@ def scrape_subreddit(
                 )
 
                 try:
-                    thread_res = session.get(thread_url, headers=headers, timeout=15).json()
+                    _scrape_state["message"] = f"Scraping: {safe_title}..."
+                    thread_response = session.get(thread_url, headers=headers, timeout=15)
+                    if thread_response.status_code != 200:
+                        continue
+                        
+                    thread_res = thread_response.json()
                     if not isinstance(thread_res, list) or len(thread_res) < 2:
                         continue
 
@@ -331,8 +402,8 @@ def scrape_subreddit(
                     _scrape_state["completed"] = posts_collected
                     _scrape_state["posts_saved"].append(filename)
 
-                    # Rate limit: 2 seconds between requests
-                    time.sleep(2)
+                    # Rate limit: 1 second between requests (optimized from 2s)
+                    time.sleep(1)
 
                 except Exception as e:
                     _scrape_state["error"] = f"Error on thread {thread_id}: {e}"

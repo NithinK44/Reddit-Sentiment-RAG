@@ -50,13 +50,22 @@ HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
 class AnalyzeRequest(BaseModel):
     query: str
     mode: str = "deep"  # "deep" = multi-agent, "quick" = simple RAG
+    collection: str = "reddit_sentiment"
+
+
+class EmbedRequest(BaseModel):
+    subreddit: str
 
 
 class ScrapeRequest(BaseModel):
-    subreddit: str = "ManchesterUnited"
+    subreddit: str = ""
     post_limit: int = 25
     sort_by: str = "top"
     time_filter: str = "year"
+
+
+class SubredditValidateRequest(BaseModel):
+    subreddit: str
 
 
 # ============================================================================
@@ -88,7 +97,7 @@ def save_history(history: list):
 @app.get("/")
 async def serve_dashboard():
     """Serve the main dashboard HTML."""
-    return FileResponse("static/index.html")
+    return FileResponse("static/index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 # ============================================================================
@@ -96,10 +105,10 @@ async def serve_dashboard():
 # ============================================================================
 
 @app.get("/api/stats")
-async def get_stats():
+async def get_stats(collection_name: str = "reddit_sentiment"):
     """Get collection statistics."""
     try:
-        collection = get_chroma_collection()
+        collection = get_chroma_collection(collection_name)
         count = collection.count()
 
         sample = collection.peek(limit=100)
@@ -131,6 +140,16 @@ async def get_stats():
 # ============================================================================
 # API ENDPOINTS — SCRAPING
 # ============================================================================
+
+@app.post("/api/validate_subreddit")
+async def validate_sub(request: SubredditValidateRequest):
+    """Validate if a subreddit exists and return its metadata."""
+    from scraper.reddit_scraper import validate_subreddit
+    result = validate_subreddit(request.subreddit)
+    if not result["success"]:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
 
 @app.post("/api/scrape")
 async def start_scrape(request: ScrapeRequest):
@@ -167,7 +186,7 @@ async def scrape_status():
 # ============================================================================
 
 @app.post("/api/embed")
-async def start_embed():
+async def start_embed(request: EmbedRequest):
     """Trigger embedding of scraped data into ChromaDB."""
     from rag.embedder import embed_to_chromadb, get_embed_status
 
@@ -176,12 +195,12 @@ async def start_embed():
         raise HTTPException(status_code=409, detail="An embed job is already running")
 
     def run_embed():
-        embed_to_chromadb()
+        embed_to_chromadb(request.subreddit)
 
     thread = threading.Thread(target=run_embed, daemon=True)
     thread.start()
 
-    return {"status": "started", "message": "Embedding scraped data into ChromaDB"}
+    return {"status": "started", "message": f"Embedding data for r/{request.subreddit} into ChromaDB"}
 
 
 @app.get("/api/embed/status")
@@ -192,10 +211,10 @@ async def embed_status():
 
 
 @app.get("/api/data/count")
-async def data_file_count():
+async def data_file_count(subreddit: str = ""):
     """Count how many JSON files are ready for embedding."""
     from rag.embedder import count_json_files
-    return {"count": count_json_files()}
+    return {"count": count_json_files(subreddit)}
 
 
 # ============================================================================
@@ -204,7 +223,7 @@ async def data_file_count():
 
 @app.post("/api/analyze")
 def analyze_sentiment(request: AnalyzeRequest):
-    """Run full multi-agent sentiment analysis."""
+    """Run sentiment analysis — both modes return {mode, report: UnifiedAnalysisReport}."""
     if USE_GOOGLE_STUDIO:
         if not GOOGLE_API_KEY:
             raise HTTPException(status_code=400, detail="GOOGLE_API_KEY not configured. Set it in your .env file.")
@@ -215,30 +234,27 @@ def analyze_sentiment(request: AnalyzeRequest):
     try:
         if request.mode == "quick":
             from rag.generator import query_rag
-            result = query_rag(request.query, n_results=5)
-            response = {
-                "type": "quick",
-                "query": request.query,
-                "answer": result,
-                "timestamp": datetime.now().isoformat(),
-            }
+            report = query_rag(request.query, n_results=8, collection_name=request.collection)
         else:
             from agents.pipeline import run_analysis
-            report = run_analysis(request.query)
-            response = {
-                "type": "deep",
-                "query": request.query,
-                "report": report,
-                "timestamp": datetime.now().isoformat(),
-            }
+            report = run_analysis(request.query, collection_name=request.collection)
 
-        # Save to history
+        # Uniform response envelope — both modes identical shape
+        response = {
+            "mode": request.mode,
+            "report": report,
+        }
+
+        # Save to history with enriched fields
         history = load_history()
+        verdict = report.get("verdict", {})
         history_entry = {
             "query": request.query,
             "mode": request.mode,
             "timestamp": datetime.now().isoformat(),
-            "sentiment": response.get("report", {}).get("overall_sentiment", "N/A") if request.mode == "deep" else "N/A",
+            "sentiment": verdict.get("overall_sentiment", "N/A"),
+            "confidence": verdict.get("confidence", 0.0),
+            "net_sentiment_score": verdict.get("net_sentiment_score", 0),
         }
         history.append(history_entry)
         save_history(history)
@@ -254,6 +270,27 @@ async def get_history():
     """Get recent analysis history."""
     history = load_history()
     return {"history": list(reversed(history))}
+
+@app.get("/api/collections")
+async def get_collections():
+    """Get list of available subreddits (Chroma collections)."""
+    import chromadb
+    from config import CHROMA_PERSIST_DIR
+    try:
+        client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
+        collections = client.list_collections()
+        deduped = {}
+        for c in collections:
+            name = c.name if hasattr(c, 'name') else c
+            coll = client.get_collection(name)
+            count = coll.count()
+            if count > 0:
+                key = name.lower()
+                if key not in deduped or count > deduped[key]["docs"]:
+                    deduped[key] = {"name": name, "docs": count}
+        return {"collections": list(deduped.values())}
+    except Exception as e:
+        return {"error": str(e), "collections": []}
 
 
 # ============================================================================
