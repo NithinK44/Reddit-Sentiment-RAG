@@ -1430,6 +1430,15 @@
                 </div>
             </div>
 
+            <!-- Word Cloud -->
+            <div class="card" id="wordcloudSection" style="margin-bottom: 32px; display: none;">
+                <div class="section-title"><span class="icon">☁️</span> Topic Inspiration</div>
+                <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:16px;">Key terms found in the current dataset to inspire your query:</p>
+                <div id="wordcloudContainer" style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:center;min-height:100px;">
+                    <!-- Words injected here -->
+                </div>
+            </div>
+
             <div class="search-section card">
                 <div class="search-box">
                     <input type="text" id="searchInput" class="search-input"
@@ -1466,6 +1475,7 @@
                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                     <div id="quickSentimentBadge" class="sentiment-badge neutral">—</div>
                     <span id="quickModeBadge" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;background:var(--accent-orange-dim);color:var(--accent-orange);font-weight:700;letter-spacing:0.8px">⚡ QUICK</span>
+                    <span id="quickStrategyBadge" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;background:var(--accent-steel-dim);color:var(--accent-steel);font-weight:700;letter-spacing:0.5px"></span>
                     <span id="quickConfidenceText" style="font-size:0.82rem;color:var(--text-secondary)"></span>
                 </div>
                 <div id="quickSummaryText" class="quick-summary-text"></div>
@@ -1483,6 +1493,7 @@
                         <div id="sentimentBadge" class="sentiment-badge neutral">—</div>
                         <div id="netScoreBadge" class="net-score-badge zero"></div>
                         <span id="modeBadgeLabel" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;background:var(--accent-orange-dim);color:var(--accent-orange);font-weight:700;letter-spacing:0.8px"></span>
+                        <span id="strategyBadgeLabel" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;background:var(--accent-steel-dim);color:var(--accent-steel);font-weight:700;letter-spacing:0.5px"></span>
                     </div>
                     <div id="oneLinerText" style="font-size:1.1rem;font-weight:600;color:var(--text-primary);margin:10px 0 4px"></div>
                     <div class="gauge-confidence" id="confidenceText"></div>
@@ -1620,8 +1631,44 @@
                 item.classList.toggle('completed', idx < step);
             });
 
-            if (step === 3) fetchStats();
+            if (step === 3) {
+                fetchStats();
+                fetchWordCloud();
+            }
             if (step === 2) fetchFileCount();
+        }
+
+        async function fetchWordCloud() {
+            try {
+                const res = await fetch(`/api/wordcloud?collection_name=${encodeURIComponent(currentCollection)}`);
+                const data = await res.json();
+                const container = document.getElementById('wordcloudContainer');
+                const section = document.getElementById('wordcloudSection');
+                
+                if (data.words && data.words.length > 0) {
+                    section.style.display = 'block';
+                    
+                    // Find min and max for scaling
+                    const maxCount = Math.max(...data.words.map(w => w.value));
+                    const minCount = Math.min(...data.words.map(w => w.value));
+                    
+                    const colors = [
+                        'var(--accent-orange)', 'var(--accent-steel)', 'var(--accent-green)', 
+                        'var(--accent-amber)', 'var(--text-primary)', 'var(--text-secondary)'
+                    ];
+                    
+                    container.innerHTML = data.words.map(w => {
+                        // Scale between 0.8rem and 2rem
+                        const size = maxCount === minCount ? 1 : 0.8 + ((w.value - minCount) / (maxCount - minCount)) * 1.5;
+                        const color = colors[Math.floor(Math.random() * colors.length)];
+                        return `<span style="font-size: ${size}rem; color: ${color}; font-weight: ${Math.random() > 0.5 ? 700 : 400}; padding: 2px 6px; display: inline-block; transition: transform 0.2s; cursor: default" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">${w.text}</span>`;
+                    }).join('');
+                } else {
+                    section.style.display = 'none';
+                }
+            } catch (e) {
+                console.error('Wordcloud error:', e);
+            }
         }
 
         async function fetchFileCount() {
@@ -1994,6 +2041,9 @@
                 // Meta footer
                 const meta = r.meta || {};
                 const freshness = meta.data_freshness || {};
+                
+                document.getElementById('quickStrategyBadge').textContent = `🔀 ${meta.retrieval_strategy || 'N/A'}`;
+                
                 document.getElementById('quickMetaInfo').innerHTML =
                     `📄 ${meta.documents_analyzed || 0} docs &nbsp;|&nbsp;
                      🔀 ${meta.retrieval_strategy || 'N/A'} &nbsp;|&nbsp;
@@ -2023,6 +2073,10 @@
             netBadge.className = `net-score-badge ${net > 0 ? 'pos' : net < 0 ? 'neg' : 'zero'}`;
 
             document.getElementById('modeBadgeLabel').textContent = mode === 'quick' ? '⚡ QUICK' : '🧠 DEEP';
+            
+            const reportMeta = r.meta || {};
+            document.getElementById('strategyBadgeLabel').textContent = `🔀 ${reportMeta.retrieval_strategy || 'N/A'}`;
+            
             document.getElementById('oneLinerText').textContent = verdict.one_line_summary || '';
             document.getElementById('confidenceText').textContent = `Confidence: ${((verdict.confidence || 0) * 100).toFixed(0)}%`;
             typewriter(document.getElementById('summaryText'), r.executive_summary || '');

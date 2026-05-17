@@ -106,7 +106,7 @@ def get_chroma_collection(collection_name=COLLECTION_NAME):
     )
 
 
-def get_llm(temperature: float = 0.3):
+def get_llm(temperature: float = 0.3, model_name: str = None):
     """Get the LangChain LLM instance (Google Gemini or OpenRouter)."""
     
     if USE_GOOGLE_STUDIO:
@@ -115,8 +115,10 @@ def get_llm(temperature: float = 0.3):
         if not GOOGLE_API_KEY:
             raise ValueError("GOOGLE_API_KEY not found. Set it in your .env file.")
             
+        active_model = model_name or GOOGLE_MODEL
+            
         return ChatGoogleGenerativeAI(
-            model=GOOGLE_MODEL,
+            model=active_model,
             google_api_key=GOOGLE_API_KEY,
             temperature=temperature,
             max_output_tokens=4000,
@@ -129,9 +131,11 @@ def get_llm(temperature: float = 0.3):
                 "OPENROUTER_API_KEY not found. "
                 "Set it in your .env file or as an environment variable. "
             )
+            
+        active_model = model_name or LLM_MODEL
         
         return ChatOpenAI(
-            model=LLM_MODEL,
+            model=active_model,
             api_key=OPENROUTER_API_KEY,
             base_url="https://openrouter.ai/api/v1",
             temperature=temperature,

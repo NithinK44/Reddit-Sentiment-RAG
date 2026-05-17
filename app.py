@@ -138,6 +138,39 @@ async def get_stats(collection_name: str = "reddit_sentiment"):
 
 
 # ============================================================================
+# API ENDPOINTS — WORD CLOUD
+# ============================================================================
+
+import re
+from collections import Counter
+
+STOPWORDS = {"the", "and", "to", "of", "a", "in", "for", "is", "on", "that", "it", "with", "as", "was", "this", "but", "they", "are", "have", "be", "not", "we", "you", "at", "from", "or", "by", "an", "if", "my", "so", "all", "about", "can", "has", "do", "what", "just", "their", "like", "there", "out", "would", "up", "who", "more", "when", "some", "one", "them", "which", "will", "your", "than", "me", "how", "he", "been", "only", "no", "get", "because", "people", "even", "now", "any", "other", "very", "also", "then", "into", "could", "much", "think", "see", "make", "really", "know", "good", "time", "well", "way", "why", "did", "were", "had", "should", "over", "those", "these", "where", "its", "i", "it's", "don't", "i'm", "that's", "can't"}
+
+@app.get("/api/wordcloud")
+async def get_wordcloud(collection_name: str = "reddit_sentiment"):
+    """Get word frequencies for a word cloud."""
+    try:
+        collection = get_chroma_collection(collection_name)
+        # Fetch up to 200 documents to generate the word cloud quickly
+        result = collection.get(limit=200, include=["documents"])
+        documents = result.get("documents", [])
+        
+        if not documents:
+            return {"words": []}
+            
+        text = " ".join(documents).lower()
+        words = re.findall(r'\b[a-z]{3,}\b', text)
+        filtered_words = [w for w in words if w not in STOPWORDS]
+        
+        counts = Counter(filtered_words)
+        top_words = [{"text": word, "value": count} for word, count in counts.most_common(40)]
+        
+        return {"words": top_words}
+    except Exception as e:
+        return {"error": str(e), "words": []}
+
+
+# ============================================================================
 # API ENDPOINTS — SCRAPING
 # ============================================================================
 

@@ -31,7 +31,7 @@ Analyze the query:
 1. Does it mention a specific person, place, or unique noun? -> HYBRID
 2. Is it asking about a general mood or broad theme? -> SEMANTIC
 
-Output ONLY valid JSON with no markdown fencing: {"strategy": "SEMANTIC", "reason": "short explanation"}"""),
+Output ONLY valid JSON with no markdown fencing: {{"strategy": "SEMANTIC", "reason": "short explanation"}}"""),
     ("human", "{query}"),
 ])
 

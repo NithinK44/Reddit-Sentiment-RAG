@@ -20,6 +20,10 @@ When Hybrid search is used, we apply **RRF** to combine results. This is a robus
 `Score = Σ 1 / (k + rank)`
 It ensures that documents ranked highly by *both* algorithms are prioritized without needing to normalize the scores of different search types.
 
+### C. Transparency and Exploration
+- **Router Visibility**: The chosen retrieval strategy (Semantic vs Hybrid) is surfaced dynamically in the UI badges, making the agentic decision transparent to the user.
+- **Data Exploration (Word Cloud)**: After data is embedded, the backend analyzes the knowledge base to extract frequent, significant terms, generating a dynamic word cloud. This guides users on what questions might yield the best insights before they even type a query.
+
 ---
 
 ## 3. The Data Pipeline (ETL)

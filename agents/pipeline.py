@@ -35,6 +35,7 @@ class SentimentState(TypedDict):
     final_report: dict
     retrieval_strategy: str
     doc_count: int
+    collection_name: str
 
 
 # ============================================================================
@@ -43,7 +44,8 @@ class SentimentState(TypedDict):
 
 def retrieve(state: SentimentState) -> dict:
     query = state["query"]
-    docs, strategy = hybrid_retrieve(query=query, n_results=15, min_score=3, use_multi_query=True)
+    coll_name = state.get("collection_name", "reddit_sentiment")
+    docs, strategy = hybrid_retrieve(query=query, n_results=15, min_score=3, use_multi_query=True, collection_name=coll_name)
 
     formatted = format_docs(docs)
     metadata_list = [doc.metadata for doc in docs]
@@ -96,7 +98,7 @@ CONTEXT:
 
 
 def extract(state: SentimentState) -> dict:
-    llm = get_llm(temperature=0.1)
+    llm = get_llm(temperature=0.1, model_name="gemini-3-flash")
     chain = EXTRACTOR_PROMPT | llm | StrOutputParser()
     result = chain.invoke({
         "context": state["formatted_context"],
@@ -166,7 +168,7 @@ RAW CONTEXT:
 
 
 def analyze_sentiment(state: SentimentState) -> dict:
-    llm = get_llm(temperature=0.2)
+    llm = get_llm(temperature=0.2, model_name="gemini-3-flash")
     chain = SENTIMENT_PROMPT | llm | StrOutputParser()
     result = chain.invoke({
         "extraction": state["extraction"],
@@ -277,7 +279,7 @@ SENTIMENT ANALYSIS:
 
 
 def synthesize(state: SentimentState) -> dict:
-    llm = get_llm(temperature=0.1)
+    llm = get_llm(temperature=0.1, model_name="gemini-3-flash")
     chain = SYNTHESIZER_PROMPT | llm | StrOutputParser()
     raw_output = chain.invoke({
         "extraction": state["extraction"],
@@ -360,7 +362,7 @@ def build_graph():
     return graph.compile()
 
 
-def run_analysis(query: str) -> dict:
+def run_analysis(query: str, collection_name: str = "reddit_sentiment") -> dict:
     graph = build_graph()
     initial_state = {
         "query": query,
@@ -372,6 +374,7 @@ def run_analysis(query: str) -> dict:
         "final_report": {},
         "retrieval_strategy": "",
         "doc_count": 0,
+        "collection_name": collection_name,
     }
     result = graph.invoke(initial_state)
     return result["final_report"]

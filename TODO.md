@@ -20,6 +20,7 @@ Tracking the implementation status of features defined in `.agents/specs/`.
 | Enriched Analysis Output | `features/enriched_analysis_output.md` | ✅ Implemented |
 | Quick Mode Redesign | `features/quick_mode_and_router_fix.md` | ✅ Implemented |
 | Router Fix (BUGFIX-001) | `features/quick_mode_and_router_fix.md` | ✅ Fixed |
+| Router Visibility & Word Cloud | `features/router_visibility_wordcloud.md` | ✅ Implemented |
 
 ## FEAT-004 Phase Checklist
 ### Phase 1: Schema Foundation
