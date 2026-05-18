@@ -131,29 +131,49 @@ def embed_to_chromadb(subreddit: str = "reddit_sentiment"):
         embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
         collection = client.get_or_create_collection(name=subreddit, embedding_function=embedding_fn, metadata={"hnsw:space": "cosine"})
 
-        documents, metadatas, ids, seen_ids = [], [], [], set()
+        seen_ids = set()
+        batch_size = 100
+        processed_count = 0
+        
+        current_docs = []
+        current_metadatas = []
+        current_ids = []
+        
+        # We don't know total_docs upfront without reading all files,
+        # so we set it to 0 and update it at the end.
+        _embed_state["total_docs"] = 0 
+        
         for doc in load_reddit_data(data_path):
             doc_id = generate_doc_id(doc["content"], doc["metadata"])
             if doc_id in seen_ids:
                 continue
             seen_ids.add(doc_id)
-            documents.append(doc["content"])
-            metadatas.append(doc["metadata"])
-            ids.append(doc_id)
-        _embed_state["total_docs"] = len(documents)
-
-        if not documents:
+            
+            current_docs.append(doc["content"])
+            current_metadatas.append(doc["metadata"])
+            current_ids.append(doc_id)
+            
+            if len(current_docs) == batch_size:
+                collection.upsert(documents=current_docs, metadatas=current_metadatas, ids=current_ids)
+                processed_count += len(current_docs)
+                _embed_state["processed_docs"] = processed_count
+                current_docs, current_metadatas, current_ids = [], [], []
+                
+        # Upsert remaining
+        if current_docs:
+            collection.upsert(documents=current_docs, metadatas=current_metadatas, ids=current_ids)
+            processed_count += len(current_docs)
+            _embed_state["processed_docs"] = processed_count
+            
+        _embed_state["total_docs"] = processed_count
+        
+        if processed_count == 0:
             _embed_state.update(running=False, finished=True)
             return {"success": True, "documents_added": 0, "total": collection.count()}
 
-        batch_size = 100
-        for i in range(0, len(documents), batch_size):
-            collection.upsert(documents=documents[i:i+batch_size], metadatas=metadatas[i:i+batch_size], ids=ids[i:i+batch_size])
-            _embed_state["processed_docs"] = min(i + batch_size, len(documents))
-
         final_count = collection.count()
         _embed_state.update(running=False, finished=True)
-        return {"success": True, "documents_added": len(documents), "total": final_count}
+        return {"success": True, "documents_added": processed_count, "total": final_count}
     except Exception as e:
         _embed_state.update(error=str(e), running=False, finished=True)
         return {"error": str(e)}

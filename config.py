@@ -55,6 +55,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 # Google AI Studio Configuration
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
+DEEP_ANALYSIS_MODEL = os.getenv("DEEP_ANALYSIS_MODEL", GOOGLE_MODEL)
 
 def print_config_status():
     """Print the current configuration status."""

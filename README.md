@@ -5,7 +5,8 @@ An AI-powered multi-agent system designed to scrape, index, and analyze sentimen
 ![Premium Dashboard Mockup](static/index.html) <!-- Placeholder for image if available -->
 
 ## ✨ Features
-- **Verified Scraping**: NEW! Real-time subreddit existence validation and confirmation workflow to prevent invalid scrapes.
+- **Verified Scraping**: Real-time subreddit existence validation and confirmation workflow to prevent invalid scrapes.
+- **Latency Optimized**: NEW! Cached BM25 index, parallelized multi-query retrieval, and combined router/expansion calls for faster analysis.
 - **Smart Data Collection**: Extract post and comment trees from any subreddit with authority injection ([OP] and [MOD] tags).
 - **Advanced RAG Architecture**: Hybrid retrieval combining multi-query expansion, metadata filtering (flair, score), and vector search via ChromaDB.
 - **Multi-Agent Orchestration**: Specialized LangGraph agents for extraction, sentiment evaluation, and report synthesis.

@@ -18,7 +18,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 from langgraph.graph import StateGraph, END
 
-from config import get_llm, LLM_MODEL
+from config import get_llm, LLM_MODEL, DEEP_ANALYSIS_MODEL
 from rag.retriever import hybrid_retrieve
 from agents.schemas import UnifiedAnalysisReport, UnifiedReportMeta, make_fallback_report
 from rag.generator import format_docs
@@ -98,7 +98,7 @@ CONTEXT:
 
 
 def extract(state: SentimentState) -> dict:
-    llm = get_llm(temperature=0.1, model_name="gemini-3-flash")
+    llm = get_llm(temperature=0.1, model_name=DEEP_ANALYSIS_MODEL)
     chain = EXTRACTOR_PROMPT | llm | StrOutputParser()
     result = chain.invoke({
         "context": state["formatted_context"],
@@ -168,7 +168,7 @@ RAW CONTEXT:
 
 
 def analyze_sentiment(state: SentimentState) -> dict:
-    llm = get_llm(temperature=0.2, model_name="gemini-3-flash")
+    llm = get_llm(temperature=0.2, model_name=DEEP_ANALYSIS_MODEL)
     chain = SENTIMENT_PROMPT | llm | StrOutputParser()
     result = chain.invoke({
         "extraction": state["extraction"],
@@ -279,7 +279,7 @@ SENTIMENT ANALYSIS:
 
 
 def synthesize(state: SentimentState) -> dict:
-    llm = get_llm(temperature=0.1, model_name="gemini-3-flash")
+    llm = get_llm(temperature=0.1, model_name=DEEP_ANALYSIS_MODEL)
     chain = SYNTHESIZER_PROMPT | llm | StrOutputParser()
     raw_output = chain.invoke({
         "extraction": state["extraction"],
@@ -362,8 +362,12 @@ def build_graph():
     return graph.compile()
 
 
+# Compile the graph once at module load
+print("⚡ Compiling LangGraph for Sentiment Analysis...")
+COMPILED_GRAPH = build_graph()
+
+
 def run_analysis(query: str, collection_name: str = "reddit_sentiment") -> dict:
-    graph = build_graph()
     initial_state = {
         "query": query,
         "retrieved_docs": [],
@@ -376,5 +380,5 @@ def run_analysis(query: str, collection_name: str = "reddit_sentiment") -> dict:
         "doc_count": 0,
         "collection_name": collection_name,
     }
-    result = graph.invoke(initial_state)
+    result = COMPILED_GRAPH.invoke(initial_state)
     return result["final_report"]

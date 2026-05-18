@@ -10,6 +10,7 @@ Tracking the implementation status of features defined in `.agents/specs/`.
 - [x] Subreddit Validation and Confirmation <!-- mapped to features/subreddit_validation.md -->
 - [x] Enriched Analysis Output — Quick & Deep Mode <!-- mapped to features/enriched_analysis_output.md (FEAT-004) -->
 - [x] Quick Mode Conversational Summary + Router Fix <!-- mapped to features/quick_mode_and_router_fix.md (FEAT-005 + BUGFIX-001) -->
+- [ ] Latency Optimization <!-- mapped to features/latency_optimization.md -->
 
 ## Implementation Progress
 | Feature | Spec File | Status |
@@ -21,6 +22,8 @@ Tracking the implementation status of features defined in `.agents/specs/`.
 | Quick Mode Redesign | `features/quick_mode_and_router_fix.md` | ✅ Implemented |
 | Router Fix (BUGFIX-001) | `features/quick_mode_and_router_fix.md` | ✅ Fixed |
 | Router Visibility & Word Cloud | `features/router_visibility_wordcloud.md` | ✅ Implemented |
+| Latency Optimization | `features/latency_optimization.md` | ✅ Implemented |
+
 
 ## FEAT-004 Phase Checklist
 ### Phase 1: Schema Foundation
@@ -50,3 +53,15 @@ Tracking the implementation status of features defined in `.agents/specs/`.
 - [x] Add KeyEntities section
 - [x] Add ActionableInsights accordion
 - [x] Add TrendIndicators section
+
+## Latency Optimization Checklist
+### Phase 1: Critical Fixes
+- [x] Fix BM25 on-the-fly build in `rag/retriever.py`
+- [x] Cache graph compilation in `agents/pipeline.py`
+
+### Phase 2: Parallelization & I/O Optimization
+- [x] Parallelize multi-query retrieval in `rag/retriever.py`
+- [x] Stream data in `rag/embedder.py`
+
+### Phase 3: Advanced Optimization
+- [x] Combine Router and Multi-Query LLM calls in `rag/retriever.py`

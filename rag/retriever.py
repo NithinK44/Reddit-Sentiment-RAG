@@ -8,20 +8,29 @@ Advanced Retrieval Strategies — BUGFIX-001 + Phase 2 & 3
 """
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
+
 from config import get_llm, get_langchain_vectorstore, DEFAULT_N_RESULTS
+
+# Global cache for BM25 indexes to avoid reloading all docs on every query
+# Key: collection_name, Value: (bm25_instance, list_of_langchain_documents)
+BM25_CACHE = {}
+
 
 # ============================================================================
 # PROMPTS
 # ============================================================================
 
-ROUTER_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """You are a retrieval router for a Reddit Sentiment RAG system.
-Your job is to analyze the user's query and decide the best retrieval strategy.
+COMBINED_ROUTER_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """You are a retrieval router and query expander for a Reddit Sentiment RAG system.
+Your job is to:
+1. Analyze the user's query and decide the best retrieval strategy.
+2. Generate 3 alternative phrasings of the query to maximize document recall from a vector database.
 
 STRATEGIES:
 - 'SEMANTIC': Best for abstract concepts, feelings, vibes, and general opinions.
@@ -31,57 +40,42 @@ Analyze the query:
 1. Does it mention a specific person, place, or unique noun? -> HYBRID
 2. Is it asking about a general mood or broad theme? -> SEMANTIC
 
-Output ONLY valid JSON with no markdown fencing: {{"strategy": "SEMANTIC", "reason": "short explanation"}}"""),
+Output ONLY valid JSON matching this exact schema:
+{{
+  "strategy": "<SEMANTIC|HYBRID>",
+  "reason": "<short explanation>",
+  "variants": ["<variant 1>", "<variant 2>", "<variant 3>"]
+}}
+"""),
     ("human", "{query}"),
 ])
 
-MULTI_QUERY_PROMPT_TEMPLATE = """You are an AI assistant helping analyze Reddit community sentiment.
-Generate 3 alternative phrasings of the following question to maximize document recall
-from a vector database. Output each version on its own line, no numbering or prefixes.
-
-Original question: {question}"""
 
 
 # ============================================================================
 # MULTI-QUERY INLINE IMPLEMENTATION
 # ============================================================================
 
-def multi_query_retrieve(vectorstore, query: str, k: int = 10) -> list:
-    """
-    Inline multi-query retrieval — generates 3 query variants via LLM,
-    retrieves docs for each, then deduplicates by content hash.
-    Replaces the removed MultiQueryRetriever dependency.
-    """
-    llm = get_llm(temperature=0.4)
-    prompt = PromptTemplate(input_variables=["question"], template=MULTI_QUERY_PROMPT_TEMPLATE)
-    chain = prompt | llm | StrOutputParser()
-
+def get_strategy_and_variants(query: str) -> tuple[str, list[str]]:
+    """Calls LLM to decide strategy and generate query variants."""
+    llm = get_llm(temperature=0.2)
+    chain = COMBINED_ROUTER_PROMPT | llm | StrOutputParser()
     try:
-        raw_variants = chain.invoke({"question": query})
-        variants = [q.strip() for q in raw_variants.strip().splitlines() if q.strip()]
+        raw_output = chain.invoke({"query": query})
+        cleaned = raw_output.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            cleaned = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
+        
+        data = json.loads(cleaned)
+        strategy = data.get("strategy", "SEMANTIC").upper()
+        variants = data.get("variants", [])
+        print(f"🔄 Router chose: {strategy} (Reason: {data.get('reason', 'N/A')})")
+        return strategy, variants
     except Exception as e:
-        print(f"⚠️ Multi-query generation failed, using original query: {e}")
-        variants = []
+        print(f"⚠️ Combined router failed, defaulting to SEMANTIC: {e}")
+        return "SEMANTIC", []
 
-    # Always include the original query
-    queries = [query] + variants[:3]
-
-    base_retriever = vectorstore.as_retriever(search_kwargs={"k": k})
-    seen = set()
-    all_docs = []
-
-    for q in queries:
-        try:
-            docs = base_retriever.invoke(q)
-            for doc in docs:
-                h = hash(doc.page_content[:300])
-                if h not in seen:
-                    seen.add(h)
-                    all_docs.append(doc)
-        except Exception as e:
-            print(f"⚠️ Retrieval failed for variant '{q[:40]}...': {e}")
-
-    return all_docs
 
 
 # ============================================================================
@@ -117,31 +111,8 @@ def reciprocal_rank_fusion(vector_docs: list, keyword_docs: list, k: int = 60) -
 # ROUTER
 # ============================================================================
 
-def route_query(query: str) -> str:
-    """Ask LLM to decide the retrieval strategy (SEMANTIC or HYBRID)."""
-    try:
-        llm = get_llm(temperature=0)
-        chain = ROUTER_PROMPT | llm
-        response = chain.invoke({"query": query})
+# route_query was removed in favor of get_strategy_and_variants
 
-        # Robustly strip any markdown fencing the LLM may produce
-        content = response.content.strip()
-        if content.startswith("```"):
-            lines = content.split("\n")
-            inner = lines[1:]
-            if inner and inner[-1].strip() == "```":
-                inner = inner[:-1]
-            content = "\n".join(inner).strip()
-
-        data = json.loads(content)
-        strategy = data.get("strategy", "SEMANTIC").upper()
-        if strategy not in ("SEMANTIC", "HYBRID"):
-            strategy = "SEMANTIC"
-        print(f"🔄 Router chose: {strategy} (Reason: {data.get('reason', 'N/A')})")
-        return strategy
-    except Exception as e:
-        print(f"⚠️ Router failed, defaulting to SEMANTIC: {e}")
-        return "SEMANTIC"
 
 
 # ============================================================================
@@ -155,14 +126,37 @@ def hybrid_retrieve(query: str, n_results: int = DEFAULT_N_RESULTS,
     Agentic Hybrid Retrieval.
     Returns (List[Document], strategy_label: str)
     """
-    strategy = route_query(query)
+    if use_multi_query:
+        strategy, variants = get_strategy_and_variants(query)
+        queries = [query] + variants[:3]
+    else:
+        strategy, _ = get_strategy_and_variants(query)
+        queries = [query]
+
     vectorstore = get_langchain_vectorstore(collection_name)
 
     # 1. Semantic / Vector Search
-    if use_multi_query:
-        vector_docs = multi_query_retrieve(vectorstore, query, k=n_results * 2)
-    else:
-        vector_docs = vectorstore.as_retriever(search_kwargs={"k": n_results * 2}).invoke(query)
+    base_retriever = vectorstore.as_retriever(search_kwargs={"k": n_results * 2})
+    
+    def fetch_docs(q):
+        try:
+            return base_retriever.invoke(q)
+        except Exception as e:
+            print(f"⚠️ Retrieval failed for variant '{q[:40]}...': {e}")
+            return []
+
+    print(f"🧵 Parallelizing retrieval for {len(queries)} queries...")
+    with ThreadPoolExecutor(max_workers=len(queries)) as executor:
+        results = list(executor.map(fetch_docs, queries))
+
+    seen = set()
+    vector_docs = []
+    for docs in results:
+        for doc in docs:
+            h = hash(doc.page_content[:300])
+            if h not in seen:
+                seen.add(h)
+                vector_docs.append(doc)
 
     final_docs = vector_docs
     strategy_label = "Semantic (Vector)"
@@ -171,12 +165,19 @@ def hybrid_retrieve(query: str, n_results: int = DEFAULT_N_RESULTS,
     if strategy == "HYBRID":
         strategy_label = "Hybrid (BM25 + Vector)"
         try:
-            all_docs_data = vectorstore.get()
-            langchain_docs = [
-                Document(page_content=d, metadata=m)
-                for d, m in zip(all_docs_data["documents"], all_docs_data["metadatas"])
-            ]
-            bm25 = get_bm25_retriever(langchain_docs)
+            if collection_name not in BM25_CACHE:
+                print(f"📦 Building BM25 index for {collection_name}...")
+                all_docs_data = vectorstore.get()
+                langchain_docs = [
+                    Document(page_content=d, metadata=m)
+                    for d, m in zip(all_docs_data["documents"], all_docs_data["metadatas"])
+                ]
+                bm25 = get_bm25_retriever(langchain_docs)
+                BM25_CACHE[collection_name] = (bm25, langchain_docs)
+            else:
+                print(f"📦 Using cached BM25 index for {collection_name}")
+                bm25, langchain_docs = BM25_CACHE[collection_name]
+
             if bm25:
                 tokenized_query = query.lower().split()
                 keyword_docs = bm25.get_top_n(tokenized_query, langchain_docs, n=n_results * 2)
