@@ -11,7 +11,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Fix encoding for Windows console (emojis)
-import sys
 try:
     if sys.stdout and hasattr(sys.stdout, 'reconfigure') and sys.stdout.encoding.lower() != 'utf-8':
         sys.stdout.reconfigure(encoding='utf-8')
@@ -26,10 +25,18 @@ ENV_PATH = BASE_DIR / ".env"
 # Load environment variables with override=True to ensure .env values win
 if ENV_PATH.exists():
     load_dotenv(dotenv_path=ENV_PATH, override=True)
-    print(f"[OK] Loaded configuration from {ENV_PATH}")
 else:
-    print(f"[WARN] .env file not found at {ENV_PATH}")
     load_dotenv() # Fallback to default search
+
+from core.logging_config import setup_logging
+setup_logging()
+import logging
+logger = logging.getLogger(__name__)
+
+if ENV_PATH.exists():
+    logger.info(f"Loaded configuration from {ENV_PATH}")
+else:
+    logger.warning(f".env file not found at {ENV_PATH}")
 
 # ============================================================================
 # PATHS & CONSTANTS
@@ -60,19 +67,19 @@ DEEP_ANALYSIS_MODEL = os.getenv("DEEP_ANALYSIS_MODEL", GOOGLE_MODEL)
 def print_config_status():
     """Print the current configuration status."""
     if USE_GOOGLE_STUDIO:
-        print(f"🤖 Provider: Google AI Studio")
-        print(f"🤖 Model: {GOOGLE_MODEL}")
+        logger.info(f"🤖 Provider: Google AI Studio")
+        logger.info(f"🤖 Model: {GOOGLE_MODEL}")
         if GOOGLE_API_KEY:
-            print(f"🔑 API Key: {'*' * 5}{GOOGLE_API_KEY[-4:]} (from .env)")
+            logger.info(f"🔑 API Key: {'*' * 5}{GOOGLE_API_KEY[-4:]} (from .env)")
         else:
-            print("❌ API Key: Google API Key not found")
+            logger.warning("❌ API Key: Google API Key not found")
     else:
-        print(f"🤖 Provider: OpenRouter")
-        print(f"🤖 Model: {LLM_MODEL}")
+        logger.info(f"🤖 Provider: OpenRouter")
+        logger.info(f"🤖 Model: {LLM_MODEL}")
         if OPENROUTER_API_KEY and OPENROUTER_API_KEY != "your_api_key_here":
-            print(f"🔑 API Key: {'*' * 5}{OPENROUTER_API_KEY[-4:]} (from .env)")
+            logger.info(f"🔑 API Key: {'*' * 5}{OPENROUTER_API_KEY[-4:]} (from .env)")
         else:
-            print("❌ API Key: OpenRouter API Key not found")
+            logger.warning("❌ API Key: OpenRouter API Key not found")
 
 # Retrieval defaults
 DEFAULT_N_RESULTS = 10
@@ -122,7 +129,7 @@ def get_llm(temperature: float = 0.3, model_name: str = None):
             model=active_model,
             google_api_key=GOOGLE_API_KEY,
             temperature=temperature,
-            max_output_tokens=4000,
+            max_output_tokens=10000,
         )
     else:
         from langchain_openai import ChatOpenAI
@@ -140,7 +147,7 @@ def get_llm(temperature: float = 0.3, model_name: str = None):
             api_key=OPENROUTER_API_KEY,
             base_url="https://openrouter.ai/api/v1",
             temperature=temperature,
-            max_tokens=4000,
+            max_tokens=10000,
         )
 
 

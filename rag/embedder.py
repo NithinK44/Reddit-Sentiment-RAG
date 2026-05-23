@@ -6,11 +6,19 @@ Loads Reddit posts/comments from JSON, creates embeddings, stores in ChromaDB.
 
 import json
 import hashlib
+import threading
 from pathlib import Path
 from typing import Generator
+import logging
 
 import chromadb
 from chromadb.utils import embedding_functions
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from core.db import upsert_documents
+
+logger = logging.getLogger(__name__)
+from core.manifest_manager import ManifestManager
+from rag.retriever import invalidate_bm25_cache
 
 from config import (
     DATA_DIR, CHROMA_PERSIST_DIR, COLLECTION_NAME,
@@ -47,39 +55,89 @@ def flatten_comments(comments, post_meta, depth=0, parent_context=""):
             yield from flatten_comments(replies, post_meta, depth + 1, body)
 
 
-def load_reddit_data(data_dir: Path):
-    json_files = list(data_dir.glob("*.json"))
-    print(f"Found {len(json_files)} JSON files to process")
-    for json_file in json_files:
-        try:
-            with open(json_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            meta = data.get("meta", {})
-            content = data.get("content", {})
-            post_id = json_file.stem.split("_")[0]
-            meta["post_id"] = post_id
-            post_body = content.get("post_body", "").strip()
-            if post_body:
+post_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1500,
+    chunk_overlap=200,
+    length_function=len
+)
+
+def extract_docs_from_file(json_file: Path) -> Generator:
+    """
+    Extracts embeddable documents from a scraped Reddit JSON file.
+    Scraper saves: { "meta": { title, url, score, flair, date, sort },
+                     "content": { post_body, comments: [...] } }
+    """
+    try:
+        with open(json_file, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+
+        # ── Read from the correct nested structure produced by reddit_scraper ──
+        meta_block = raw.get("meta", {})
+        content_block = raw.get("content", {})
+
+        # Derive a stable post_id from the filename (format: <id>_<title>.json)
+        post_id = json_file.stem.split("_")[0]
+
+        post_meta = {
+            "post_id": post_id,
+            "title": meta_block.get("title", ""),
+            "url": meta_block.get("url", ""),
+            "date": meta_block.get("date", ""),
+            "score": int(meta_block.get("score", 0)),
+            "flair": meta_block.get("flair") or "Unknown",
+            "sort": meta_block.get("sort", ""),
+        }
+
+        # Yield main post body if it has text (semantically chunked if long)
+        post_body = content_block.get("post_body", "").strip()
+        if post_body:
+            full_text = f"Title: {post_meta['title']}\n\n{post_body}"
+            if len(full_text) <= 2000:
                 yield {
-                    "content": f"[POST] {meta.get('title', '')}\n\n{post_body}",
+                    "content": full_text,
                     "metadata": {
-                        "post_id": post_id, "post_title": meta.get("title", ""),
-                        "post_url": meta.get("url", ""), "post_date": meta.get("date", ""),
-                        "post_score": int(meta.get("score", 0)), "post_sort": meta.get("sort", ""),
-                        "flair": meta.get("flair", "Unknown"), "comment_score": int(meta.get("score", 0)),
-                        "depth": 0, "type": "post",
+                        "post_id": post_meta["post_id"],
+                        "post_title": post_meta["title"],
+                        "post_url": post_meta["url"],
+                        "post_date": post_meta["date"],
+                        "post_score": post_meta["score"],
+                        "post_sort": post_meta["sort"],
+                        "flair": post_meta["flair"],
+                        "comment_score": post_meta["score"],
+                        "depth": 0,
+                        "type": "post",
                     },
                 }
-            yield from flatten_comments(content.get("comments", []), meta)
-            print(f"  Processed: {json_file.name}")
-        except Exception as e:
-            print(f"  Error processing {json_file.name}: {e}")
+            else:
+                chunks = post_splitter.split_text(post_body)
+                for idx, chunk in enumerate(chunks):
+                    chunk_content = f"Title: {post_meta['title']} (Part {idx+1})\n\n{chunk}"
+                    yield {
+                        "content": chunk_content,
+                        "metadata": {
+                            "post_id": post_meta["post_id"],
+                            "post_title": post_meta["title"],
+                            "post_url": post_meta["url"],
+                            "post_date": post_meta["date"],
+                            "post_score": post_meta["score"],
+                            "post_sort": post_meta["sort"],
+                            "flair": post_meta["flair"],
+                            "comment_score": post_meta["score"],
+                            "depth": 0,
+                            "type": f"post_part_{idx+1}",
+                        },
+                    }
+
+        yield from flatten_comments(content_block.get("comments", []), post_meta)
+    except Exception as e:
+        logger.error(f"  Error processing {json_file.name}: {e}")
 
 
 _embed_state = {
     "running": False, "total_files": 0, "total_docs": 0,
     "processed_docs": 0, "error": None, "finished": False,
 }
+_embed_lock = threading.Lock()
 
 
 def get_embed_status():
@@ -111,77 +169,115 @@ def get_embed_status():
     return status
 
 
+def _set_embed_state(**kwargs):
+    """Thread-safe helper to update _embed_state fields."""
+    with _embed_lock:
+        _embed_state.update(kwargs)
+
+
 def embed_to_chromadb(subreddit: str = "reddit_sentiment"):
     global _embed_state
-    if _embed_state["running"]:
-        return {"error": "An embed job is already running"}
-    _embed_state = {"running": True, "total_files": 0, "total_docs": 0, "processed_docs": 0, "error": None, "finished": False}
+    with _embed_lock:
+        if _embed_state["running"]:
+            return {"error": "An embed job is already running"}
+        _embed_state = {"running": True, "total_files": 0, "total_docs": 0, "processed_docs": 0, "error": None, "finished": False}
     try:
         data_path = DATA_DIR / subreddit
         if not data_path.exists():
-            _embed_state.update(error=f"Data directory not found: {data_path}", running=False, finished=True)
-            return {"error": _embed_state["error"]}
+            err = f"Data directory not found: {data_path}"
+            _set_embed_state(error=err, running=False, finished=True)
+            return {"error": err}
         json_files = list(data_path.glob("*.json"))
-        _embed_state["total_files"] = len(json_files)
+        _set_embed_state(total_files=len(json_files))
         if not json_files:
-            _embed_state.update(error="No JSON files found. Scrape data first.", running=False, finished=True)
-            return {"error": _embed_state["error"]}
+            err = "No JSON files found. Scrape data first."
+            _set_embed_state(error=err, running=False, finished=True)
+            return {"error": err}
 
         client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
         embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
         collection = client.get_or_create_collection(name=subreddit, embedding_function=embedding_fn, metadata={"hnsw:space": "cosine"})
 
+        manifest = ManifestManager(data_path)
+
         seen_ids = set()
         batch_size = 100
         processed_count = 0
-        
-        current_docs = []
-        current_metadatas = []
-        current_ids = []
         
         # We don't know total_docs upfront without reading all files,
         # so we set it to 0 and update it at the end.
         _embed_state["total_docs"] = 0 
         
-        for doc in load_reddit_data(data_path):
-            doc_id = generate_doc_id(doc["content"], doc["metadata"])
-            if doc_id in seen_ids:
+        for json_file in json_files:
+            if not manifest.is_file_changed(json_file):
+                logger.info(f"  Skipped (unchanged): {json_file.name}")
                 continue
-            seen_ids.add(doc_id)
-            
-            current_docs.append(doc["content"])
-            current_metadatas.append(doc["metadata"])
-            current_ids.append(doc_id)
-            
-            if len(current_docs) == batch_size:
-                collection.upsert(documents=current_docs, metadatas=current_metadatas, ids=current_ids)
-                processed_count += len(current_docs)
-                _embed_state["processed_docs"] = processed_count
-                current_docs, current_metadatas, current_ids = [], [], []
                 
-        # Upsert remaining
-        if current_docs:
-            collection.upsert(documents=current_docs, metadatas=current_metadatas, ids=current_ids)
-            processed_count += len(current_docs)
-            _embed_state["processed_docs"] = processed_count
+            current_docs = []
+            current_metadatas = []
+            current_ids = []
+            current_sqlite_docs = []
             
-        _embed_state["total_docs"] = processed_count
-        
+            for doc in extract_docs_from_file(json_file):
+                doc_id = generate_doc_id(doc["content"], doc["metadata"])
+                if doc_id in seen_ids:
+                    continue
+                seen_ids.add(doc_id)
+                
+                current_docs.append(doc["content"])
+                current_metadatas.append(doc["metadata"])
+                current_ids.append(doc_id)
+                current_sqlite_docs.append({
+                    "doc_id": doc_id,
+                    "content": doc["content"],
+                    "metadata": doc["metadata"]
+                })
+                
+                if len(current_docs) >= batch_size:
+                    collection.upsert(documents=current_docs, metadatas=current_metadatas, ids=current_ids)
+                    upsert_documents(current_sqlite_docs)
+                    processed_count += len(current_docs)
+                    _set_embed_state(processed_docs=processed_count)
+                    current_docs, current_metadatas, current_ids = [], [], []
+                    current_sqlite_docs = []
+
+            # Upsert remaining for this file
+            if current_docs:
+                collection.upsert(documents=current_docs, metadatas=current_metadatas, ids=current_ids)
+                upsert_documents(current_sqlite_docs)
+                processed_count += len(current_docs)
+                _set_embed_state(processed_docs=processed_count)
+
+            manifest.update_file(json_file)
+            logger.info(f"  Embedded and manifested: {json_file.name}")
+            
+        _set_embed_state(total_docs=processed_count)
+
+        # Invalidate the BM25 cache so the new docs are indexed on next search
+        invalidate_bm25_cache(subreddit)
+
         if processed_count == 0:
-            _embed_state.update(running=False, finished=True)
+            _set_embed_state(running=False, finished=True)
             return {"success": True, "documents_added": 0, "total": collection.count()}
 
         final_count = collection.count()
-        _embed_state.update(running=False, finished=True)
+        _set_embed_state(running=False, finished=True)
         return {"success": True, "documents_added": processed_count, "total": final_count}
     except Exception as e:
-        _embed_state.update(error=str(e), running=False, finished=True)
+        _set_embed_state(error=str(e), running=False, finished=True)
         return {"error": str(e)}
 
 
 def count_json_files(subreddit: str = ""):
     """Count available JSON files in the data directory."""
-    data_path = DATA_DIR / subreddit if subreddit else DATA_DIR
+    if subreddit:
+        # Subreddit files live directly in DATA_DIR/<subreddit>/*.json
+        data_path = DATA_DIR / subreddit
+        pattern = "*.json"
+    else:
+        # No subreddit specified — count all JSON files in all subdirectories
+        data_path = DATA_DIR
+        pattern = "**/*.json"
     if not data_path.exists():
         return 0
-    return len(list(data_path.glob("*.json" if not subreddit else "**/*.json")))
+    return len(list(data_path.glob(pattern)))

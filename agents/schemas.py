@@ -8,7 +8,7 @@ Old SentimentReport kept as alias for backwards compatibility during migration.
 
 import uuid
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, Field
 
 
@@ -24,7 +24,7 @@ class DataFreshness(BaseModel):
 class UnifiedReportMeta(BaseModel):
     report_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     query: str
-    mode: str = "deep"  # "quick" | "deep"
+    mode: Literal["quick", "deep"] = "deep"
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     documents_analyzed: int = 0
     retrieval_strategy: str = "hybrid"
@@ -99,6 +99,7 @@ class SentimentDistribution(BaseModel):
     emotion_map: EmotionMap = Field(default_factory=EmotionMap)
     sarcasm_detected: bool = False
     controversy_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    controversy_drivers: List[str] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -202,54 +203,4 @@ def make_fallback_report(query: str, mode: str, raw_text: str = "",
     return report.model_dump()
 
 
-# ============================================================================
-# LEGACY — kept for backwards compatibility during migration window
-# ============================================================================
 
-class Theme(BaseModel):
-    name: str
-    sentiment: str
-    frequency: str
-    description: str
-
-
-class Quote(BaseModel):
-    text: str
-    context: str
-    sentiment: str
-    score: int = 0
-
-
-class SentimentBreakdown(BaseModel):
-    positive_pct: float
-    negative_pct: float
-    neutral_pct: float
-    dominant_emotions: List[str]
-    sarcasm_detected: bool
-
-
-class ReportMeta(BaseModel):
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
-    documents_analyzed: int = 0
-    retrieval_strategy: str = "hybrid"
-    model_used: str = "gemini-2.0-flash"
-
-
-class SentimentReport(BaseModel):
-    """LEGACY — use UnifiedAnalysisReport for all new code."""
-    query: str
-    overall_sentiment: str
-    confidence: float
-    summary: str
-    key_themes: List[Theme] = Field(default_factory=list)
-    notable_quotes: List[Quote] = Field(default_factory=list)
-    sentiment_breakdown: SentimentBreakdown
-    meta: ReportMeta = Field(default_factory=ReportMeta)
-
-
-class QuickSearchResult(BaseModel):
-    """LEGACY — use UnifiedAnalysisReport for all new code."""
-    query: str
-    answer: str
-    sources: list = Field(default_factory=list)
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)

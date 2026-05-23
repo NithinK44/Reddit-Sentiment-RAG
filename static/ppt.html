@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reddit Sentiment Intelligence - Technical Architecture PPT</title>
+    
+    <!-- Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            /* Same color codes as the project */
+            --bg-primary: #0E0C0B;
+            --bg-secondary: #161412;
+            --bg-card: rgba(255, 248, 244, 0.04);
+            --bg-card-hover: rgba(255, 248, 244, 0.06);
+            --border: rgba(232, 210, 195, 0.1);
+            --border-hover: rgba(232, 210, 195, 0.18);
+            
+            --text-primary: #EDE9E4;
+            --text-secondary: #9A8F87;
+            --text-muted: #665E59;
+            
+            --accent-orange: #E8490F;   /* burnt orange primary */
+            --accent-orange-dim: rgba(232, 73, 15, 0.12);
+            --accent-orange-border: rgba(232, 73, 15, 0.28);
+            --accent-steel: #3D7EBF;    /* steel blue secondary */
+            --accent-steel-dim: rgba(61, 126, 191, 0.12);
+            
+            --accent-green: #2E8B57;
+            --accent-green-dim: rgba(46, 139, 87, 0.12);
+            --accent-green-border: rgba(46, 139, 87, 0.28);
+            --accent-red: #C0392B;
+            --accent-red-dim: rgba(192, 57, 43, 0.12);
+            --accent-red-border: rgba(192, 57, 43, 0.28);
+            --accent-amber: #C17D2E;
+            --accent-amber-dim: rgba(193, 125, 46, 0.12);
+            --accent-amber-border: rgba(193, 125, 46, 0.28);
+            
+            --radius: 12px;
+            --radius-sm: 8px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background-image:
+                radial-gradient(ellipse 900px 600px at 15% 0%, rgba(232, 73, 15, 0.07) 0%, transparent 70%),
+                radial-gradient(ellipse 700px 500px at 85% 100%, rgba(61, 126, 191, 0.06) 0%, transparent 70%);
+            background-attachment: fixed;
+        }
+
+        /* Presentation Container */
+        .ppt-wrapper {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            height: calc(100vh - 70px);
+        }
+
+        .slide {
+            position: absolute;
+            width: 90%;
+            max-width: 1280px;
+            height: 85%;
+            max-height: 720px;
+            background: rgba(22, 20, 18, 0.85);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 48px;
+            opacity: 0;
+            transform: translateY(30px) scale(0.98);
+            pointer-events: none;
+            transition: var(--transition);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .slide.active {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+            z-index: 10;
+        }
+
+        /* Slide Header */
+        .slide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
+            margin-bottom: 24px;
+        }
+
+        .slide-title-area h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .slide-title-area h2 .slide-icon {
+            color: var(--accent-orange);
+        }
+
+        .slide-subtitle {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .slide-tag {
+            font-size: 0.72rem;
+            padding: 6px 14px;
+            border-radius: 6px;
+            background: var(--accent-orange-dim);
+            border: 1px solid var(--accent-orange-border);
+            color: var(--accent-orange);
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+
+        /* Slide Body Layouts */
+        .slide-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+            align-items: center;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+
+        /* UI Cards */
+        .tech-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            transition: var(--transition);
+        }
+
+        .tech-card:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-card-hover);
+            transform: translateY(-2px);
+        }
+
+        .tech-card-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tech-card-desc {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .tech-card-desc strong {
+            color: var(--text-primary);
+        }
+
+        .bullet-list {
+            list-style-type: none;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .bullet-list li {
+            position: relative;
+            padding-left: 20px;
+            font-size: 0.92rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
+        }
+
+        .bullet-list li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: var(--accent-orange);
+            font-weight: bold;
+            font-size: 1.2rem;
+            top: -2px;
+        }
+
+        /* Controls Footer */
+        .controls-footer {
+            height: 70px;
+            border-top: 1px solid var(--border);
+            background: #090807;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 40px;
+            position: relative;
+            z-index: 100;
+        }
+
+        .footer-brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 700;
+        }
+
+        .footer-brand .logo {
+            background: var(--accent-orange);
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+        }
+
+        .navigation-controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .nav-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: var(--transition);
+        }
+
+        .nav-btn:hover {
+            background: var(--accent-orange);
+            border-color: var(--accent-orange);
+            box-shadow: 0 0 12px rgba(232, 73, 15, 0.3);
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            background: var(--bg-card);
+            border-color: var(--border);
+            box-shadow: none;
+        }
+
+        .slide-counter {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* Progress Bar */
+        .progress-bar-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--accent-orange), var(--accent-steel));
+            transition: width 0.3s ease;
+        }
+
+        /* Title Slide Custom Styles */
+        .title-slide-content {
+            text-align: center;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .title-slide-content h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3.5rem;
+            font-weight: 800;
+            letter-spacing: -1.5px;
+            background: linear-gradient(135deg, var(--text-primary) 30%, var(--accent-orange) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 16px;
+        }
+
+        .title-slide-content .glow-subtitle {
+            font-size: 1.25rem;
+            color: var(--accent-steel);
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 32px;
+        }
+
+        .title-slide-divider {
+            height: 1px;
+            width: 120px;
+            background: var(--accent-orange);
+            margin: 0 auto 32px;
+        }
+
+        .title-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 40px;
+        }
+
+        .title-meta-item {
+            border-left: 2px solid var(--border);
+            padding-left: 16px;
+            text-align: left;
+        }
+
+        .title-meta-label {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .title-meta-val {
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        /* Flowchart / Interactive Diagram Styles */
+        .diagram-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 32px 16px;
+            margin-top: 16px;
+            position: relative;
+        }
+
+        .diagram-node {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 14px;
+            width: 140px;
+            text-align: center;
+            cursor: pointer;
+            transition: var(--transition);
+            z-index: 5;
+            position: relative;
+        }
+
+        .diagram-node:hover {
+            border-color: var(--accent-orange);
+            box-shadow: 0 0 15px rgba(232, 73, 15, 0.2);
+            transform: scale(1.05);
+        }
+
+        .diagram-node.active-node {
+            border-color: var(--accent-steel);
+            box-shadow: 0 0 15px rgba(61, 126, 191, 0.3);
+            background: rgba(61, 126, 191, 0.05);
+        }
+
+        .diagram-node-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+
+        .diagram-node-sub {
+            font-size: 0.68rem;
+            color: var(--text-secondary);
+        }
+
+        .diagram-arrow {
+            flex: 1;
+            height: 2px;
+            background: var(--border);
+            position: relative;
+            margin: 0 4px;
+        }
+
+        .diagram-arrow::after {
+            content: "";
+            position: absolute;
+            right: 0;
+            top: -4px;
+            width: 0;
+            height: 0;
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+            border-left: 6px solid var(--border);
+        }
+
+        .diagram-arrow.arrow-active {
+            background: var(--accent-steel);
+        }
+
+        .diagram-arrow.arrow-active::after {
+            border-left-color: var(--accent-steel);
+        }
+
+        .diagram-detail-box {
+            margin-top: 24px;
+            min-height: 100px;
+            background: rgba(255, 248, 244, 0.02);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 20px;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .diagram-detail-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--accent-orange);
+            margin-bottom: 6px;
+        }
+
+        .diagram-detail-text {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        /* Interactive Tabs for Sub-Agents */
+        .tabs-header {
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1px;
+            margin-bottom: 24px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            padding: 10px 20px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: var(--transition);
+        }
+
+        .tab-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .tab-btn.active-tab {
+            color: var(--accent-orange);
+            border-bottom-color: var(--accent-orange);
+        }
+
+        .tab-pane {
+            display: none;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .tab-pane.active-pane {
+            display: block;
+        }
+
+        /* Code display blocks */
+        .code-container {
+            position: relative;
+        }
+
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1c1a18;
+            border: 1px solid var(--border);
+            border-bottom: none;
+            border-top-left-radius: var(--radius-sm);
+            border-top-right-radius: var(--radius-sm);
+            padding: 8px 16px;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .code-block {
+            background: #0B0A09;
+            border: 1px solid var(--border);
+            border-bottom-left-radius: var(--radius-sm);
+            border-bottom-right-radius: var(--radius-sm);
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: #EDE9E4;
+            line-height: 1.4;
+            overflow-x: auto;
+            white-space: pre;
+        }
+
+        .keyword { color: #f43f5e; }
+        .string { color: #10b981; }
+        .comment { color: var(--text-muted); }
+        .type-cls { color: #38bdf8; }
+        .builtin { color: #fbbf24; }
+
+        /* Animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Responsive Layout fixes */
+        @media (max-height: 760px) {
+            .slide {
+                padding: 24px;
+                height: 90%;
+            }
+            .slide-header {
+                padding-bottom: 12px;
+                margin-bottom: 16px;
+            }
+            .slide-title-area h2 {
+                font-size: 1.6rem;
+            }
+            .title-slide-content h1 {
+                font-size: 2.8rem;
+            }
+            .grid-2 {
+                gap: 20px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Progress Indicator -->
+    <div class="progress-bar-container">
+        <div class="progress-bar-fill" id="progressBar"></div>
+    </div>
+
+    <!-- Presentation Body -->
+    <div class="ppt-wrapper">
+
+        <!-- SLIDE 1: TITLE / HERO -->
+        <div class="slide active" id="slide-0">
+            <div class="slide-content">
+                <div class="title-slide-content">
+                    <div class="glow-subtitle">Multi-Agent Intelligence</div>
+                    <h1>Reddit Sentiment RAG</h1>
+                    <div class="title-slide-divider"></div>
+                    <p style="font-size: 1.1rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 40px;">
+                        An end-to-end technical deep dive into a state-of-the-art AI pipeline. Scrapes communities, embeds comment trees, routes intent dynamically, and runs a stateful 4-agent LangGraph analysis loop with self-correction.
+                    </p>
+                    
+                    <div class="title-meta-grid">
+                        <div class="title-meta-item">
+                            <div class="title-meta-label">Architecture</div>
+                            <div class="title-meta-val">LangGraph &amp; Pydantic</div>
+                        </div>
+                        <div class="title-meta-item">
+                            <div class="title-meta-label">Search Strategy</div>
+                            <div class="title-meta-val">Vector Dense + FTS5 Sparse</div>
+                        </div>
+                        <div class="title-meta-item">
+                            <div class="title-meta-label">UI Analytics</div>
+                            <div class="title-meta-val">Chart.js Radar &amp; Donut</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 2: CAPABILITIES & TECH STACK -->
+        <div class="slide" id="slide-1">
+            <div class="slide-header">
+                <div class="slide-title-area">
+                    <h2><span class="slide-icon">🛠️</span> System Objectives &amp; Technology Stack</h2>
+                    <div class="slide-subtitle">The components that make the Reddit Sentiment Intelligence RAG work.</div>
+                </div>
+                <div class="slide-tag">Stack Overview</div>
+            </div>
+            <div class="slide-content">
+                <div class="grid-2">
+                    <div class="tech-card">
+                        <div class="tech-card-title">💡 Core Architecture Pillars</div>
+                        <ul class="bullet-list" style="margin-top: 8px;">
+                            <li><strong>Stateful Workflows:</strong> Moves away from linear RAG pipelines. Uses agent interaction graphs for analysis, verification, and formatting.</li>
+                            <li><strong>Dynamic Agent Agency:</strong> Agents are provided with specialized tools (databases, scrapers) to act upon the environment.</li>
+                            <li><strong>Dense-Sparse Hybrid Retrieval:</strong> Combines semantic search with lexical full-text index lookup for exact names and terms.</li>
+                            <li><strong>Output Reliability:</strong> Self-correcting reflection loops guarantee that generated reports strictly match structured data formats.</li>
+                        </ul>
+                    </div>
+
+                    <div class="tech-card" style="background: rgba(61,126,191,0.02); border-color: rgba(61,126,191,0.12);">
+                        <div class="tech-card-title" style="color: var(--accent-steel);">🧱 Technical Stack Components</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
+                            <div>
+                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">AGENTS &amp; RAG</div>
+                                <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                    • LangGraph State Machine<br>
+                                    • LangChain Orchestration<br>
+                                    • Gemini 2.5 Flash / LLMs<br>
+                                    • CrossEncoder MS-Marco Reranker
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">STORAGE &amp; DATA</div>
+                                <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                     • ChromaDB Vector Store<br>
+                                     • SQLite FTS5 (Full-Text)<br>
+                                     • VADER / TextBlob Lexicon<br>
+                                     • Reddit Public JSON API
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">BACKEND WEB API</div>
+                                <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                    • FastAPI (ASGI framework)<br>
+                                    • Pydantic v2 Models<br>
+                                    • Server-Sent Events (SSE)<br>
+                                    • Asynchronous job store
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">FRONTEND DASHBOARD</div>
+                                <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                    • HTML5 &amp; Vanilla CSS3<br>
+                                    • Responsive layout grid<br>
+                                    • Chart.js (Charts &amp; Radars)<br>
+                                    • Marked.js Markdown rendering
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 3: E2E PIPELINE FLOW (INTERACTIVE) -->
+        <div class="slide" id="slide-2">
+            <div class="slide-header">
+                <div class="slide-title-area">
+                    <h2><span class="slide-icon">🔄</span> Interactive End-to-End Flow Diagram</h2>
+                    <div class="slide-subtitle">Click on any pipeline node to inspect details of data flows and state mutations.</div>
+                </div>
+                <div class="slide-tag">System Pipeline</div>
+            </div>
+            <div class="slide-content">
+                <div class="diagram-container">
+                    <div class="diagram-node" data-detail="input">
+                        <div class="diagram-node-title">1. User Query</div>
+                        <div class="diagram-node-sub">Dashboard UI</div>
+                    </div>
+                    <div class="diagram-arrow"></div>
+                    <div class="diagram-node" data-detail="orchestrator">
+                        <div class="diagram-node-title">2. Orchestrator</div>
+                        <div class="diagram-node-sub">Intent Routing</div>
+                    </div>
+                    <div class="diagram-arrow"></div>
+                    <div class="diagram-node" data-detail="scraper">
+                        <div class="diagram-node-title">3. Scraper Agent</div>
+                        <div class="diagram-node-sub">Public JSON API Ingestion</div>
+                    </div>
+                    <div class="diagram-arrow"></div>
+                    <div class="diagram-node" data-detail="embedder">
+                        <div class="diagram-node-title">4. Embedder</div>
+                        <div class="diagram-node-sub">ChromaDB / SQLite</div>
+                    </div>
+                    <div class="diagram-arrow"></div>
+                    <div class="diagram-node" data-detail="langgraph">
+                        <div class="diagram-node-title">5. LangGraph RAG</div>
+                        <div class="diagram-node-sub">4-Agent Pipeline</div>
+                    </div>
+                    <div class="diagram-arrow"></div>
+                    <div class="diagram-node" data-detail="ui">
+                        <div class="diagram-node-title">6. Output JSON</div>
+                        <div class="diagram-node-sub">Chart.js Dashboard</div>
+                    </div>
+                </div>
+
+                <div class="diagram-detail-box" id="diagramDetail">
+                    <div class="diagram-detail-title">💡 System Navigation</div>
+                    <div class="diagram-detail-text">Click on any node in the flow diagram above to view its technical details, functions, inputs, outputs, and roles in the sentiment intelligence pipeline.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 4: THE MASTER ORCHESTRATOR -->
+        <div class="slide" id="slide-3">
+            <div class="slide-header">
+                <div class="slide-title-area">
+                    <h2><span class="slide-icon">🧠</span> The Master Orchestrator Router</h2>
+                    <div class="slide-subtitle">Dynamically classifies intents to bypass vector stores for trending topics.</div>
+                </div>
+                <div class="slide-tag">agents/orchestrator.py</div>
+            </div>
+            <div class="slide-content">
+                <div class="grid-2">
+                    <div class="bullet-list">
+                        <p style="font-size: 0.95rem; color: var(--text-primary); margin-bottom: 8px; line-height: 1.5;">
+                            The <strong>Master Orchestrator</strong> serves as the system "Traffic Cop," ensuring queries about real-time events bypass static indices.
+                        </p>
+                        <div class="tech-card" style="margin-bottom: 12px;">
+                            <div style="font-weight: 700; font-size: 0.88rem; color: var(--accent-orange); margin-bottom: 6px;">Dynamic Routing Classification</div>
+                            <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5;">
+                                An LLM-based parsing chain reviews the prompt against conversation history. It maps intent to either:
+                                <br>• <code>scraper</code>: For breaking news, real-time feedback, "today", or "latest" queries.
+                                <br>• <code>rag</code>: For general topics, historical data, or aggregate community opinions.
+                            </div>
+                        </div>
+                        <div class="tech-card" style="background: rgba(56, 189, 248, 0.02); border-color: rgba(56, 189, 248, 0.15);">
+                            <div style="font-weight: 700; font-size: 0.88rem; color: var(--accent-steel); margin-bottom: 6px;">⚙️ Two-Tier Agent Architecture</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.45;">
+                                • <strong>Tier 1: High-Level Orchestration (3 Agents)</strong> — The <em>Orchestrator</em> routes to the <em>Scraper Agent</em> (data ingestion) and <em>Processor Agent</em> (NLP vector construction) if fresh data is needed, before invoking the <em>RAG Agent</em>.
+                                <br>• <strong>Tier 2: Inner RAG Loop (4 Agents)</strong> — Inside the RAG Agent, a stateful 4-agent LangGraph workflow handles context retrieval, fact extraction, sentiment mapping, and validated JSON report synthesis.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="code-container">
+                        <div class="code-header">JSON Routing Decision Schema</div>
+                        <div class="code-block">{
+  <span class="string">"route"</span>: <span class="keyword">"scraper"</span> | <span class="keyword">"rag"</span>,
+  <span class="string">"subreddit"</span>: <span class="string">"apple"</span>,
+  <span class="string">"rationale"</span>: <span class="comment">"User asked for 'latest' updates on the announcement"</span>
+}</div>
+                        <div style="margin-top: 12px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                            * If routed to <code>scraper</code>, the orchestrator triggers the <strong>Scraper Agent</strong> (live Reddit pull) and then the <strong>Processor Agent</strong> (vector indexing) before executing the final RAG retrieval node.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 5: DATA INGESTION & ENRICHMENT -->
+        <div class="slide" id="slide-4">
+            <div class="slide-header">
+                <div class="slide-title-area">
+                    <h2><span class="slide-icon">🕷️</span> Ingestion &amp; Vector Construction</h2>
+                    <div class="slide-subtitle">Retrieving comment threads recursively and embedding them with structure metadata.</div>
+                </div>
+                <div class="slide-tag">Data Enrichment</div>
+            </div>
+            <div class="slide-content">
+                <div class="grid-2">
+                    <div class="tech-card">
+                        <div class="tech-card-title">🕷️ Reddit JSON Scraper</div>
+                        <div class="tech-card-desc">
+                            Located in <code>scraper/reddit_scraper.py</code>, the scraper performs:
+                            <br>• <strong>Recursive Tree Traversal:</strong> Traverses Reddit comment trees, flattening them into structured entries.
+                            <br>• <strong>Filter Thresholding:</strong> Skips deleted/removed comments and enforces a minimum upvote threshold (configurable).
+                            <br>• <strong>Batch Partitioning:</strong> Stores scraped submissions as structured JSON payloads in <code>data/{subreddit}/*.json</code>.
+                        </div>
+                    </div>
+
+                    <div class="tech-card">
+                        <div class="tech-card-title">🏗️ ChromaDB Vector construction</div>
+                        <div class="tech-card-desc">
+                            Located in <code>rag/embedder.py</code>, the embedder executes:
+                            <br>• <strong>Text chunking:</strong> Splits large post bodies using <code>RecursiveCharacterTextSplitter</code> (chunk size 1500, overlap 200).
+                            <br>• <strong>Metadata enrichment:</strong> injects parent replies, post titles, dates, author names, upvotes, depth, and flair tags.
+                            <br>• <strong>Incremental Building:</strong> Uses a <code>ManifestManager</code> file-hashing system to only embed changed files, preventing redundant API calls.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="code-container" style="margin-top: 20px;">
+                    <div class="code-header">Comment Node Flattening Logic (rag/embedder.py)</div>
+                    <div class="code-block"><span class="keyword">def</span> <span class="builtin">flatten_comments</span>(comments, post_meta, depth=<span class="keyword">0</span>, parent_context=<span class="string">""</span>):
+    <span class="keyword">for</span> comment <span class="keyword">in</span> comments:
+        body = comment.get(<span class="string">"body"</span>, <span class="string">""</span>).strip()
+        <span class="keyword">if</span> <span class="keyword">not</span> body <span class="keyword">or</span> comment.get(<span class="string">"score"</span>, <span class="keyword">0</span>) <span class="keyword">&lt;</span> MIN_COMMENT_SCORE:
+            <span class="keyword">continue</span>
+        contextual_content = f<span class="string">"[Reply to: {parent_context[:200]}...]\n\n{body}"</span> <span class="keyword">if</span> parent_context <span class="keyword">else</span> body
+        <span class="keyword">yield</span> { <span class="string">"content"</span>: contextual_content, <span class="string">"metadata"</span>: { <span class="string">"post_id"</span>: post_meta[<span class="string">"post_id"</span>], <span class="string">"comment_score"</span>: comment[<span class="string">"score"</span>], <span class="string">"depth"</span>: depth, <span class="string">"type"</span>: <span class="string">"comment"</span> } }
+        <span class="keyword">yield from</span> flatten_comments(comment.get(<span class="string">"replies"</span>, []), post_meta, depth + <span class="keyword">1</span>, body)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 6: LANGGRAPH WORKFLOW GRAPH -->
+        <div class="slide" id="slide-5">
+            <div class="slide-header">
+                <div class="slide-title-area">
+                    <h2><span class="slide-icon">🕸️</span> Stateful RAG Graph Architecture</h2>
+                    <div class="slide-subtitle">Multi-agent analysis coordinated by a cyclic state chart.</div>
+                </div>
+                <div class="slide-tag">agents/rag_agent.py</div>
+            </div>
+            <div class="slide-content">
+                <div class="grid-2">
+                    <div class="tech-card">
+                        <div class="tech-card-title">🌐 Why Stateful Agent Graphs?</div>
+                        <div class="tech-card-desc">
+                            Linear chains often fail when executing complex tasks because LLMs are prone to syntax mistakes, semantic omissions, and format drift. 
+                            <br><br>
+                            By setting up a stateful loop with <strong>LangGraph</strong>:
+                            <br>• The system maintains a shared state object (<code>SentimentState</code>) across all nodes.
+                            <br>• We can inspect and validate the intermediate state after each agent's execution.
+                            <br>• Conditional routing handles edge cases: validation errors trigger correction nodes rather than crashing.
+                        </div>
+                    </div>
+
+                    <div style="text-align: center; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <div style="font-family: 'Outfit', sans-serif; font-size: 0.95rem; font-weight: 700; color: var(--accent-orange); margin-bottom: 20px;">LangGraph Pipeline Topology</div>
+                        
+                        <!-- Mini CSS Flowchart -->
+                        <div style="display: flex; flex-direction: column; gap: 10px; width: 100%; align-items: center;">
+                            <div style="border: 1px solid var(--border); padding: 8px 16px; border-radius: 6px; font-size: 0.8rem; background: var(--bg-secondary); width: 220px;">
+                                📥 Entry (Retrieve Node)
+                            </div>
+                            <div style="color: var(--text-muted); font-size: 0.8rem;">▼</div>
+                            <div style="border: 1px solid var(--border); padding: 8px 16px; border-radius: 6px; font-size: 0.8rem; background: var(--bg-secondary); width: 220px;">
+                                🔍 Extractor Agent
+                            </div>
+                            <div style="color: var(--text-muted); font-size: 0.8rem;">▼</div>
+                            <div style="border: 1px solid var(--border); padding: 8px 16px; border-radius: 6px; font-size: 0.8rem; background: var(--bg-secondary); width: 220px;">
+                                🎭 Sentiment Analyst
+                            </div>
+                            <div style="color: var(--text-muted); font-size: 0.8rem;">▼</div>
+                            <div style="border: 1px solid var(--accent-steel); padding: 8px 16px; border-radius: 6px; font-size: 0.8rem; background: var(--accent-steel-dim); width: 220px; font-weight: 600;">
+                                📝 Synthesizer Agent
+                            </div>
+                            <div style="display: flex; gap: 20px; margin-top: 10px; font-size: 0.75rem;">
+                                <div style="color: var(--accent-green); border: 1px solid var(--accent-green-border); background: var(--accent-green-dim); padding: 4px 8px; border-radius: 4px;">Valid: END</div>
+                                <div style="color: var(--accent-red); border: 1px solid var(--accent-red-border); background: var(--accent-red-dim); padding: 4px 8px; border-radius: 4px;">Invalid: Reflect Node</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 7: THE 4 SUB-AGENTS (INTERACTIVE) -->
+        <div class="slide" id="slide-6">
+            <div class="slide-header">
+                <div class="slide-title-area">
+                    <h2><span class="slide-icon">🤖</span> The Four Specialized Sub-Agents</h2>
+                    <div class="slide-subtitle">Click tabs to inspect the distinct roles, prompts, and tasks of the 4 graph agents.</div>
+                </div>
+                <div class="slide-tag">Agent Breakdown</div>
+            </div>
+            <div class="slide-content" style="justify-content: flex-start;">
+                <div style="background: rgba(56, 189, 248, 0.03); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 20px; font-size: 0.85rem; line-height: 1.5; color: var(--text-secondary);">
+                    <strong>💡 Tier 2 Separation of Concerns:</strong> A single model attempting to retrieve context, extract raw facts, analyze sentiment, rate emotions, and compile valid JSON often fails. Breaking the workflow into a stateful LangGraph pipeline allows each agent to focus on a single cognitive task, ending with a strict self-correcting validation step.
+                </div>
+
+                <div class="tabs-header">
+                    <button class="tab-btn active-tab" onclick="switchAgentTab(0)">1. Retriever Node</button>
+                    <button class="tab-btn" onclick="switchAgentTab(1)">2. Extractor Agent</button>
+                    <button class="tab-btn" onclick="switchAgentTab(2)">3. Sentiment Analyst</button>
+                    <button class="tab-btn" onclick="switchAgentTab(3)">4. Synthesizer Agent</button>
+                </div>
+
+                <!-- Tab 1 -->
+                <div class="tab-pane active-pane" id="agent-tab-0">
+                    <div class="grid-2">
+                        <div class="bullet-list">
+                            <h3 style="color: var(--accent-orange); font-family: 'Outfit'; margin-bottom: 8px;">Query Resolution &amp; Doc Extraction</h3>
+                            <li><strong>Context Resolution:</strong> Applies conversational memory. Rewrites follow-up inputs into standalone queries using the <code>REWRITER_PROMPT</code>.</li>
+                            <li><strong>Advanced Retrieval:</strong> Retrieves up to 15 relevant documents using semantic / vector or keyword algorithms.</li>
+                            <li><strong>State Ingestion:</strong> Populates the <code>retrieved_docs</code>, <code>formatted_context</code>, and <code>doc_metadata</code> state lists.</li>
+                        </div>
+                        <div class="tech-card">
+                            <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-primary); margin-bottom: 6px; font-family: 'JetBrains Mono';">REWRITER_PROMPT Snippet</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; font-style: italic;">
+                                "Given the conversation history and a follow-up query, reformulate it into a standalone query containing all necessary context..."
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2 -->
+                <div class="tab-pane" id="agent-tab-1">
+                    <div class="grid-2">
+                        <div class="bullet-list">
+                            <h3 style="color: var(--accent-orange); font-family: 'Outfit'; margin-bottom: 8px;">Factual Signal Filtering</h3>
+                            <li><strong>Domain Agnostic:</strong> Only extracts facts and quotes. It is strictly forbidden from analyzing sentiment at this stage to prevent premature LLM cognitive bias.</li>
+                            <li><strong>Positive / Negative Split:</strong> Separates praises (features liked, celebrated outcomes) from criticisms (complains, pain points, frustrations).</li>
+                            <li><strong>Evidence Retention:</strong> Extracts direct verbatim quotes alongside their Reddit scores (e.g. <code>[score: 412]</code>).</li>
+                        </div>
+                        <div class="tech-card">
+                            <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-primary); margin-bottom: 6px; font-family: 'JetBrains Mono';">EXTRACTOR_PROMPT Snippet</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; font-style: italic;">
+                                "Extract ONLY factual information... Be precise. Quote directly. Include Reddit scores. Do NOT analyze sentiment yet..."
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3 -->
+                <div class="tab-pane" id="agent-tab-2">
+                    <div class="grid-2">
+                        <div class="bullet-list">
+                            <h3 style="color: var(--accent-orange); font-family: 'Outfit'; margin-bottom: 8px;">Emotional Mapping &amp; Polarization</h3>
+                            <li><strong>Emotion Map Construction:</strong> Rates intensity scores (0-100) for 8 core states: <em>anger, frustration, hope, satisfaction, disappointment, excitement, sarcasm, resignation</em>.</li>
+                            <li><strong>Controversy Polarization:</strong> Computes polarization ratio (0.0 to 1.0) and lists key controversy drivers.</li>
+                            <li><strong>Trajectory Tracker:</strong> Evaluates data temporal dates to label sentiment trends (Improving, Declining, Stable).</li>
+                        </div>
+                        <div class="tech-card">
+                            <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-primary); margin-bottom: 6px; font-family: 'JetBrains Mono';">SENTIMENT_PROMPT Snippet</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; font-style: italic;">
+                                "Produce structured sentiment intelligence: overall sentiment, emotion map (0-100), controversy drivers, sarcasm detection, and competitive signals..."
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 4 -->
+                <div class="tab-pane" id="agent-tab-3">
+                    <div class="grid-2">
+                        <div class="bullet-list">
+                            <h3 style="color: var(--accent-orange); font-family: 'Outfit'; margin-bottom: 8px;">JSON Compiling &amp; Structuring</h3>
+                            <li><strong>Report Synthesis:</strong> Fuses the outputs of the Extractor and Sentiment agents into a unified structure.</li>
+                            <li><strong>Schema Enforcement:</strong> Formats variables to match the <code>UnifiedAnalysisReport</code> JSON layout exactly.</li>
+                            <li><strong>Derived Calculations:</strong> Automatically computes derived fields such as <code>net_sentiment_score</code> (Positive % - Negative %).</li>
+                            <li><strong>Summary Brevity Constraint:</strong> Enforces a concise 1-2 sentence executive summary covering positive and negative findings.</li>
+                        </div>
+                        <div class="tech-card">
+                            <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-primary); margin-bottom: 6px; font-family: 'JetBrains Mono';">SYNTHESIZER_PROMPT Snippet</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; font-style: italic;">
+                                "Fuses facts and sentiment into a structured JSON intelligence report. Output ONLY valid JSON matching the exact schema..."
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 8: PYDANTIC, VALIDATION & REFLECTION -->
+        <div class="slide" id="slide-7">
+            <div class="slide-header">
+                <div class="slide-title-area">
+                    <h2><span class="slide-icon">✅</span> Pydantic Validation &amp; Self-Correction</h2>
+                    <div class="slide-subtitle">Ensuring 100% JSON consistency and schema safety under load.</div>
+                </div>
+                <div class="slide-tag">Quality Assurance</div>
+            </div>
+            <div class="slide-content">
+                <div class="grid-2">
+                    <div class="bullet-list">
+                        <p style="font-size: 0.92rem; color: var(--text-primary); line-height: 1.5;">
+                            The Synthesizer agent's raw text response is parsed and passed to strict validation checks before completing the graph.
+                        </p>
+                        
+                        <div class="tech-card" style="margin-bottom: 12px;">
+                            <div style="font-weight: 700; font-size: 0.88rem; color: var(--accent-red); margin-bottom: 6px;">🚫 Strict Quality Rules</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                • Sentiment Split (Pos + Neg + Neu) must sum to <strong>exactly 100%</strong>.
+                                <br>• Must extract at least <strong>2 Positive &amp; 2 Negative themes</strong> with evidence.
+                                <br>• Must provide at least <strong>3 Praise &amp; 3 Criticism quotes</strong>.
+                                <br>• Injects at least <strong>2 actionable insights per team</strong> (Product, Marketing, Support).
+                            </div>
+                        </div>
+
+                        <div class="tech-card">
+                            <div style="font-weight: 700; font-size: 0.88rem; color: var(--accent-green); margin-bottom: 6px;">🔄 Reflection &amp; Fix Node</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                If checks fail or Pydantic throws an error, the state routes to <code>reflect_and_fix</code>. The correction assistant receives the invalid payload and errors, rewriting the output. The loop runs up to <strong>2 times</strong> before resorting to an structured fallback template.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="code-container">
+                        <div class="code-header">Simplified Pydantic Schema (agents/schemas.py)</div>
+                        <div class="code-block"><span class="keyword">class</span> <span class="type-cls">VerdictSchema</span>(<span class="type-cls">BaseModel</span>):
+    overall_sentiment: <span class="type-cls">Literal</span>[<span class="string">"Positive"</span>, <span class="string">"Negative"</span>, <span class="string">"Mixed"</span>, <span class="string">"Neutral"</span>]
+    confidence: <span class="type-cls">float</span> = Field(ge=<span class="keyword">0.0</span>, le=<span class="keyword">1.0</span>)
+    one_line_summary: <span class="type-cls">str</span>
+
+<span class="keyword">class</span> <span class="type-cls">UnifiedAnalysisReport</span>(<span class="type-cls">BaseModel</span>):
+    verdict: <span class="type-cls">VerdictSchema</span>
+    executive_summary: <span class="type-cls">str</span>
+    positive_signals: <span class="type-cls">PositiveSignalsSchema</span>
+    negative_signals: <span class="type-cls">NegativeSignalsSchema</span>
+    sentiment_distribution: <span class="type-cls">SentimentDistributionSchema</span>
+    key_entities: <span class="type-cls">List</span>[<span class="type-cls">EntitySchema</span>]
+    competitive_signals: <span class="type-cls">CompetitiveSignalsSchema</span>
+    trend_indicators: <span class="type-cls">TrendIndicatorsSchema</span>
+    actionable_insights: <span class="type-cls">ActionableInsightsSchema</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 9: RETRIEVAL ENGINEERING -->
+        <div class="slide" id="slide-8">
+            <div class="slide-header">
+                <div class="slide-title-area">
+                    <h2><span class="slide-icon">🔍</span> Advanced Retrieval Engineering</h2>
+                    <div class="slide-subtitle">Combining Dense and Sparse search indexes with temporal decay and reranking.</div>
+                </div>
+                <div class="slide-tag">rag/retriever.py</div>
+            </div>
+            <div class="slide-content">
+                <div class="grid-3">
+                    <div class="tech-card">
+                        <div class="tech-card-title">🔀 Hybrid Search &amp; RRF</div>
+                        <div class="tech-card-desc">
+                            Retrieves docs from two indexes:
+                            <br>1. <strong>ChromaDB (Dense):</strong> semantic lookup on contextualized text chunks.
+                            <br>2. <strong>SQLite FTS5 (Sparse):</strong> BM25 keyword matching for specific entities.
+                            <br><br>
+                            Combines findings using <strong>Reciprocal Rank Fusion (RRF)</strong> to optimize recall.
+                        </div>
+                    </div>
+
+                    <div class="tech-card">
+                        <div class="tech-card-title">⏳ Temporal Decay Score</div>
+                        <div class="tech-card-desc">
+                            Reddit posts get outdated quickly. The system discounts older posts using exponential decay:
+                            <br><br>
+                            <div style="font-family: 'JetBrains Mono'; font-size: 0.8rem; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; text-align: center; color: var(--accent-orange);">
+                                decay = e<sup>-0.005 * days_old</sup>
+                            </div>
+                            <br>
+                            This factor scales scores, prioritizing recent trends over outdated comments.
+                        </div>
+                    </div>
+
+                    <div class="tech-card">
+                        <div class="tech-card-title">🎯 Cross-Encoder Rerank</div>
+                        <div class="tech-card-desc">
+                            Rather than relying solely on cosine distance, candidates are reranked using:
+                            <br><strong style="font-size: 0.78rem; font-family:'JetBrains Mono';">cross-encoder/ms-marco-MiniLM-L-6-v2</strong>.
+                            <br><br>
+                            This evaluates exact token alignment against the prompt, sorting by final combined scores.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 10: USER DASHBOARD & COMPARISON -->
+        <div class="slide" id="slide-9">
+            <div class="slide-header">
+                <div class="slide-title-area">
+                    <h2><span class="slide-icon">📊</span> Interactive Analytics &amp; Comparison</h2>
+                    <div class="slide-subtitle">Serving structured outputs to a responsive front-end dashboard.</div>
+                </div>
+                <div class="slide-tag">Web Dashboard</div>
+            </div>
+            <div class="slide-content">
+                <div class="grid-2">
+                    <div class="bullet-list">
+                        <p style="font-size: 0.92rem; color: var(--text-primary); line-height: 1.5;">
+                            The front-end renders generated reports as structured visual metrics.
+                        </p>
+                        <div class="tech-card" style="margin-bottom: 12px;">
+                            <div style="font-weight: 700; font-size: 0.88rem; color: var(--accent-orange); margin-bottom: 6px;">📊 Chart.js Visualizations</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                • <strong>Sentiment Share (Donut Chart):</strong> Breakdown of Positive vs. Negative vs. Neutral percentages.
+                                <br>• <strong>Emotional Fingerprint (Radar Chart):</strong> Intensity of 8 target emotions (anger, excitement, etc.) compared side-by-side.
+                            </div>
+                        </div>
+                        <div class="tech-card">
+                            <div style="font-weight: 700; font-size: 0.88rem; color: var(--accent-steel); margin-bottom: 6px;">⚔️ Subreddit Comparison Engine</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                Allows comparing two communities side-by-side. The dashboard pulls historical metrics of both targets, overlaying emotional radar footprints and upvote distributions.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tech-card" style="background: rgba(255, 248, 244, 0.02); display: flex; flex-direction: column; justify-content: center; height: 100%;">
+                        <div class="tech-card-title">📡 SSE Event Stream &amp; Caching</div>
+                        <ul class="bullet-list" style="gap: 8px;">
+                            <li style="font-size: 0.82rem;"><strong>Job Progress Tracking:</strong> Background analysis tasks stream progress updates using Server-Sent Events (SSE) (<code>/api/analyze/stream/{job_id}</code>).</li>
+                            <li style="font-size: 0.82rem;"><strong>Persistence Caching:</strong> Compiled JSON reports are cached inside <code>data/reports/{report_id}.json</code>.</li>
+                            <li style="font-size: 0.82rem;"><strong>Exports:</strong> Users can download reports formatted in either HTML templates or clean Markdown files. The HTML report matches the premium dashboard styling, including UI dark mode backgrounds/radial gradients, and embeds the Sentiment Share and 8-emotion map (brief executive summary, excluding controversy elements).</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Controls Footer -->
+    <div class="controls-footer">
+        <div class="footer-brand">
+            <div class="logo">📊</div>
+            <div>Reddit Sentiment Intelligence <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; margin-left: 8px;">Architecture PPT</span></div>
+        </div>
+
+        <div class="navigation-controls">
+            <button class="nav-btn" id="prevBtn" onclick="navigateSlide(-1)">Previous</button>
+            <div class="slide-counter" id="slideCounter">1 / 10</div>
+            <button class="nav-btn" id="nextBtn" onclick="navigateSlide(1)">Next</button>
+        </div>
+    </div>
+
+    <!-- Navigation JS -->
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const progressBar = document.getElementById('progressBar');
+        const slideCounter = document.getElementById('slideCounter');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        
+        const totalSlides = slides.length;
+
+        function showSlide(index) {
+            // Bounds check
+            if (index < 0) index = 0;
+            if (index >= totalSlides) index = totalSlides - 1;
+
+            // Update classes
+            slides.forEach((slide, i) => {
+                if (i === index) {
+                    slide.classList.add('active');
+                } else {
+                    slide.classList.remove('active');
+                }
+            });
+
+            currentSlide = index;
+
+            // Update controls
+            prevBtn.disabled = currentSlide === 0;
+            nextBtn.disabled = currentSlide === totalSlides - 1;
+
+            // Update counter & progress bar
+            slideCounter.textContent = `${currentSlide + 1} / ${totalSlides}`;
+            const progressPct = ((currentSlide) / (totalSlides - 1)) * 100;
+            progressBar.style.width = `${progressPct}%`;
+        }
+
+        function navigateSlide(direction) {
+            showSlide(currentSlide + direction);
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                navigateSlide(1);
+            } else if (e.key === 'ArrowLeft') {
+                navigateSlide(-1);
+            }
+        });
+
+        // Initialize slideshow
+        showSlide(0);
+
+        // Interactive diagram logic
+        const diagramDetails = {
+            input: {
+                title: "1. User Query (Frontend Input)",
+                text: "The user submits a question on the dashboard (e.g., 'What do users think about the latest updates?'), selecting a mode (Quick vs. Deep) and retrieval strategy (Agentic, Semantic, or Hybrid)."
+            },
+            orchestrator: {
+                title: "2. Master Orchestrator Router (agents/orchestrator.py)",
+                text: "The Tier 1 router. Evaluates conversational memory and query context to route tasks. If it's a request for real-time trending topics, it triggers the Scraper and Processor agents. Otherwise, it bypasses them and routes directly to the RAG Agent."
+            },
+            scraper: {
+                title: "3. Reddit Scraper Agent (agents/scraper_agent.py)",
+                text: "A Tier 1 ReAct agent equipped with the scraping tool. Fetches the latest community posts and comments recursively using Reddit's public JSON API, saving them as structured raw JSON payloads."
+            },
+            embedder: {
+                title: "4. NLP Processor Agent (agents/processor_agent.py)",
+                text: "A Tier 1 ReAct agent equipped with the embedding tool. Parses raw scraped payloads, splits text chunks, enriches metadata, and updates ChromaDB (dense vectors) and SQLite (sparse FTS5 index)."
+            },
+            langgraph: {
+                title: "5. RAG Agent System / LangGraph Loop (agents/rag_agent.py)",
+                text: "Tier 2 multi-agent workflow. Runs a stateful 4-agent graph (Query Rewriter, Fact Extractor, Sentiment Analyst, and Synthesizer) with Pydantic output validation and self-correcting reflection loops."
+            },
+            ui: {
+                title: "6. Unified Report Generation & UI Render (app.py)",
+                text: "The backend validates and caches the report. The dashboard UI renders charts and radar emotion maps, and provides theme-matched downloadable HTML reports embedding the Sentiment Share and 8-emotion map."
+            }
+        };
+
+        const diagramNodes = document.querySelectorAll('.diagram-node');
+        const detailBox = document.getElementById('diagramDetail');
+
+        diagramNodes.forEach(node => {
+            node.addEventListener('click', () => {
+                // Highlight active node
+                diagramNodes.forEach(n => n.classList.remove('active-node'));
+                node.classList.add('active-node');
+
+                // Update detail text
+                const key = node.getAttribute('data-detail');
+                const detail = diagramDetails[key];
+                
+                if (detail) {
+                    detailBox.innerHTML = `
+                        <div class="diagram-detail-title">${detail.title}</div>
+                        <div class="diagram-detail-text">${detail.text}</div>
+                    `;
+                }
+            });
+        });
+
+        // Interactive tab logic for Slide 7 (Agent breakdown)
+        function switchAgentTab(tabIndex) {
+            const tabs = document.querySelectorAll('.tab-btn');
+            const panes = document.querySelectorAll('.tab-pane');
+
+            tabs.forEach((tab, index) => {
+                if (index === tabIndex) {
+                    tab.classList.add('active-tab');
+                } else {
+                    tab.classList.remove('active-tab');
+                }
+            });
+
+            panes.forEach((pane, index) => {
+                if (index === tabIndex) {
+                    pane.classList.add('active-pane');
+                } else {
+                    pane.classList.remove('active-pane');
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

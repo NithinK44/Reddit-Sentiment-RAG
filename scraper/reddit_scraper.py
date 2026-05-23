@@ -13,6 +13,7 @@ import time
 import json
 import re
 import socket
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -23,8 +24,6 @@ from config import DATA_DIR
 # ============================================================================
 # WARP PROXY (OPTIONAL)
 # ============================================================================
-
-WARP_CLI_PATH = r"C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe"
 
 
 def find_warp_port() -> Optional[int]:
@@ -145,12 +144,21 @@ _scrape_state = {
     "finished": False,
     "proxy_ip": None,
     "posts_saved": [],
+    "warnings": [],
 }
+_scrape_lock = threading.Lock()
+
+
+def _set_scrape_state(**kwargs):
+    """Thread-safe helper to update _scrape_state fields."""
+    with _scrape_lock:
+        _scrape_state.update(kwargs)
 
 
 def get_scrape_status() -> dict:
     """Return the current scrape job status with progress calculation."""
-    status = dict(_scrape_state)
+    with _scrape_lock:
+        status = dict(_scrape_state)
     
     # Calculate progress percentage
     if status["total"] > 0:
@@ -164,7 +172,10 @@ def get_scrape_status() -> dict:
     elif status["error"]:
         status["message"] = f"Error: {status['error']}"
     elif status["finished"]:
-        status["message"] = f"Finished! Scraped {status['completed']} posts."
+        if status.get("warnings"):
+            status["message"] = f"Finished! Scraped {status['completed']} posts (with {len(status['warnings'])} warnings)."
+        else:
+            status["message"] = f"Finished! Scraped {status['completed']} posts."
     else:
         status["message"] = "Ready to scrape."
         
@@ -256,24 +267,37 @@ def scrape_subreddit(
     if _scrape_state["running"]:
         return {"error": "A scrape job is already running"}
 
+    ALLOWED_SORT_BY = {"best", "top", "hot", "new", "relevance"}
+    ALLOWED_TIME_FILTERS = {"hour", "day", "week", "month", "year", "all"}
+
+    sort_by = sort_by.lower()
+    time_filter = time_filter.lower()
+
+    if sort_by not in ALLOWED_SORT_BY:
+        return {"error": f"Invalid sort_by. Must be one of {ALLOWED_SORT_BY}"}
+    if sort_by == "top" and time_filter not in ALLOWED_TIME_FILTERS:
+        return {"error": f"Invalid time_filter. Must be one of {ALLOWED_TIME_FILTERS}"}
+
     if depth_limits is None:
         depth_limits = {0: 25, 1: 15, 2: 10}
 
     # Clamp post_limit
     post_limit = max(1, min(250, post_limit))
 
-    # Reset state
-    _scrape_state = {
-        "running": True,
-        "subreddit": subreddit,
-        "total": post_limit,
-        "completed": 0,
-        "current_post": "",
-        "error": None,
-        "finished": False,
-        "proxy_ip": None,
-        "posts_saved": [],
-    }
+    # Reset state atomically
+    with _scrape_lock:
+        _scrape_state.update({
+            "running": True,
+            "subreddit": subreddit,
+            "total": post_limit,
+            "completed": 0,
+            "current_post": "",
+            "error": None,
+            "warnings": [],
+            "finished": False,
+            "proxy_ip": None,
+            "posts_saved": [],
+        })
 
     try:
         # Ensure output directory exists
@@ -290,7 +314,7 @@ def scrape_subreddit(
                 'http': proxy_config['http'],
                 'https': proxy_config['https'],
             })
-            _scrape_state["proxy_ip"] = proxy_config.get('_ip')
+            _set_scrape_state(proxy_ip=proxy_config.get('_ip'))
 
         retries = Retry(total=5, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
         session.mount('https://', HTTPAdapter(max_retries=retries))
@@ -345,12 +369,14 @@ def scrape_subreddit(
                 filename = f"{thread_id}_{safe_title}.json"
                 file_path = output_dir / filename
 
-                _scrape_state["current_post"] = safe_title
+                _set_scrape_state(current_post=safe_title)
 
                 if file_path.exists():
                     posts_collected += 1
-                    _scrape_state["completed"] = posts_collected
-                    _scrape_state["posts_saved"].append(filename)
+                    _set_scrape_state(
+                        completed=posts_collected,
+                        posts_saved=_scrape_state["posts_saved"] + [filename],
+                    )
                     continue
 
                 thread_url = (
@@ -399,20 +425,23 @@ def scrape_subreddit(
                         json.dump(doc_object, f, indent=4, ensure_ascii=False)
 
                     posts_collected += 1
-                    _scrape_state["completed"] = posts_collected
-                    _scrape_state["posts_saved"].append(filename)
+                    _set_scrape_state(
+                        completed=posts_collected,
+                        posts_saved=_scrape_state["posts_saved"] + [filename],
+                    )
 
                     # Rate limit: 1 second between requests (optimized from 2s)
                     time.sleep(1)
 
                 except Exception as e:
-                    _scrape_state["error"] = f"Error on thread {thread_id}: {e}"
+                    warning_msg = f"Error on thread {thread_id}: {e}"
+                    with _scrape_lock:
+                        _scrape_state["warnings"].append(warning_msg)
 
             if not after:
                 break
 
-        _scrape_state["finished"] = True
-        _scrape_state["running"] = False
+        _set_scrape_state(finished=True, running=False)
         return {
             "success": True,
             "posts_scraped": posts_collected,
@@ -420,7 +449,5 @@ def scrape_subreddit(
         }
 
     except Exception as e:
-        _scrape_state["error"] = str(e)
-        _scrape_state["running"] = False
-        _scrape_state["finished"] = True
+        _set_scrape_state(error=str(e), running=False, finished=True)
         return {"error": str(e)}

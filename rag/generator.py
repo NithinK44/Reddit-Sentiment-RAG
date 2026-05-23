@@ -1,11 +1,9 @@
 """
-RAG Generator — FEAT-005: Quick Mode (Conversational Summary)
--------------------------------------------------------------
-query_rag() returns a lightweight conversational summary dict:
-  { summary, sentiment, confidence, meta }
-
-Deep mode (agents/pipeline.py) is unchanged and still produces
-the full UnifiedAnalysisReport.
+RAG Generator — Quick Mode (Conversational Summary)
+----------------------------------------------------
+query_rag() now returns a UnifiedAnalysisReport-compatible dict so the
+API contract is identical between Quick and Deep modes. The summary lives
+in `executive_summary`; the one-line headline is in `verdict.one_line_summary`.
 """
 
 import uuid
@@ -71,13 +69,13 @@ def format_docs(docs) -> str:
 from rag.retriever import hybrid_retrieve
 
 
-def query_rag(question: str, n_results: int = 8, collection_name: str = "reddit_sentiment") -> dict:
+def query_rag(question: str, n_results: int = 8, collection_name: str = "reddit_sentiment", strategy: str = "agentic") -> dict:
     """
     FEAT-005 Quick Mode: Single-LLM-call conversational summary.
     Returns: { summary, sentiment, confidence, meta }
     """
     # 1. Retrieve with smart router
-    docs, strategy = hybrid_retrieve(question, n_results=n_results, collection_name=collection_name)
+    docs, strategy = hybrid_retrieve(question, n_results=n_results, collection_name=collection_name, forced_strategy=strategy)
 
     # 2. Format docs for context
     context = format_docs(docs)
@@ -117,10 +115,9 @@ def query_rag(question: str, n_results: int = 8, collection_name: str = "reddit_
 
     summary = "\n".join(summary_lines).strip()
 
+    # Return a UnifiedAnalysisReport-compatible dict so the API shape is
+    # identical between Quick and Deep modes.
     return {
-        "summary": summary,
-        "sentiment": sentiment,
-        "confidence": confidence,
         "meta": {
             "report_id": str(uuid.uuid4()),
             "query": question,
@@ -134,4 +131,23 @@ def query_rag(question: str, n_results: int = 8, collection_name: str = "reddit_
                 "latest_post": max(dates) if dates else None,
             },
         },
+        "verdict": {
+            "overall_sentiment": sentiment,
+            "confidence": confidence,
+            "net_sentiment_score": 0,          # not computed in quick mode
+            "one_line_summary": summary[:120] if summary else "",
+        },
+        "executive_summary": summary,
+        # Remaining fields are empty — quick mode skips full extraction
+        "positive_signals": {"headline": "", "percentage": 0.0, "top_themes": [], "praise_quotes": []},
+        "negative_signals": {"headline": "", "percentage": 0.0, "top_themes": [], "criticism_quotes": []},
+        "sentiment_distribution": {
+            "positive_pct": 0.0, "negative_pct": 0.0, "neutral_pct": 0.0,
+            "dominant_emotions": [], "emotion_map": {},
+            "sarcasm_detected": False, "controversy_score": 0.0, "controversy_drivers": [],
+        },
+        "key_entities": [],
+        "competitive_signals": {"mentions_competitors": False, "competitors_mentioned": [], "comparison_sentiment": "N/A"},
+        "trend_indicators": {"sentiment_trajectory": "Insufficient Data", "urgent_concerns": [], "emerging_positives": []},
+        "actionable_insights": {"for_product_team": [], "for_marketing_team": [], "for_support_team": []},
     }

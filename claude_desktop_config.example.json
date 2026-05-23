@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "reddit-sentiment": {
+      "command": "C:\\Users\\nithi\\OneDrive\\Desktop\\Antigravity\\Reddit-Sentiment-RAG\\venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\Users\\nithi\\OneDrive\\Desktop\\Antigravity\\Reddit-Sentiment-RAG\\mcp_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "C:\\Users\\nithi\\OneDrive\\Desktop\\Antigravity\\Reddit-Sentiment-RAG"
+      }
+    }
+  }
+}
