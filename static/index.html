@@ -38,6 +38,7 @@
             </div>
             <div style="display:flex; align-items:center; gap:12px">
                 <a href="/static/ppt.html" target="_blank" class="btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.85rem">🎬 Tech Presentation</a>
+                <a href="/static/ppt2.html" target="_blank" class="btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.85rem">🎬 Flow Presentation</a>
                 <span class="badge" id="headerBadge">r/community</span>
             </div>
         </header>
@@ -272,6 +273,12 @@
             <!-- Loading skeleton -->
             <div id="loadingSkeleton" class="card" style="display:none;margin-bottom:32px">
                 <div id="analysisStatusText" style="font-weight:bold; color:var(--accent-orange); margin-bottom:16px;">Starting analysis...</div>
+                
+                <!-- Real-time Console Log Box -->
+                <div id="analysisConsole" class="console-box">
+                    <div style="color:var(--text-muted)">[SYSTEM] Initializing console stream...</div>
+                </div>
+
                 <div class="skeleton h-lg"></div>
                 <div class="skeleton h-md"></div>
                 <div class="skeleton h-sm"></div>

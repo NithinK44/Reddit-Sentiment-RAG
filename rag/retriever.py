@@ -22,7 +22,7 @@ from core.db import search_documents_fts
 logger = logging.getLogger(__name__)
 
 
-from config import get_llm, get_langchain_vectorstore, DEFAULT_N_RESULTS
+from config import get_llm, get_langchain_vectorstore, DEFAULT_N_RESULTS, load_prompt_text
 
 # BM25 is now offloaded to SQLite FTS5. Keeping invalidate_bm25_cache as a noop to maintain backward compatibility.
 def invalidate_bm25_cache(collection_name: str = None):
@@ -42,25 +42,12 @@ def get_cross_encoder():
     return _cross_encoder_instance
 
 def apply_temporal_decay(docs: list, decay_rate: float = 0.005) -> list:
-    """Apply exponential temporal decay to documents' relevance scores."""
-    today = datetime.date.today()
+    """Apply temporal decay factor (set to 1.0 to disable post-age decay)."""
     decayed_docs = []
     for d in docs:
-        post_date_str = d.metadata.get("post_date")
-        days_old = 0
-        if post_date_str:
-            try:
-                # Format: YYYY-MM-DD
-                post_date = datetime.datetime.strptime(post_date_str, "%Y-%m-%d").date()
-                days_old = (today - post_date).days
-                days_old = max(0, days_old)
-            except Exception:
-                pass
-        decay_factor = math.exp(-decay_rate * days_old)
-        d.metadata["temporal_decay_factor"] = decay_factor
-        
+        d.metadata["temporal_decay_factor"] = 1.0
         base_score = max(1, d.metadata.get("comment_score", 1))
-        d.metadata["decayed_score"] = base_score * decay_factor
+        d.metadata["decayed_score"] = float(base_score)
         decayed_docs.append(d)
     return decayed_docs
 
@@ -92,26 +79,7 @@ def rerank_documents(query: str, docs: list) -> list:
 # ============================================================================
 
 COMBINED_ROUTER_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """You are a retrieval router and query expander for a Reddit Sentiment RAG system.
-Your job is to:
-1. Analyze the user's query and decide the best retrieval strategy.
-2. Generate 3 alternative phrasings of the query to maximize document recall from a vector database.
-
-STRATEGIES:
-- 'SEMANTIC': Best for abstract concepts, feelings, vibes, and general opinions.
-- 'HYBRID': Best for specific players, names, dates, scores, or unique entities.
-
-Analyze the query:
-1. Does it mention a specific person, place, or unique noun? -> HYBRID
-2. Is it asking about a general mood or broad theme? -> SEMANTIC
-
-Output ONLY valid JSON matching this exact schema:
-{{
-  "strategy": "<SEMANTIC|HYBRID>",
-  "reason": "<short explanation>",
-  "variants": ["<variant 1>", "<variant 2>", "<variant 3>"]
-}}
-"""),
+    ("system", load_prompt_text("combined_router.txt")),
     ("human", "{query}"),
 ])
 

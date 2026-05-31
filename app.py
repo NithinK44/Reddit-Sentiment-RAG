@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import chromadb
 
-from core.db import get_analysis_history, save_analysis_history, get_documents_paginated
+from core.db import get_analysis_history, save_analysis_history
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# History file path
-HISTORY_FILE = config.BASE_DIR / "data" / "analysis_history.json"
-HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
 
 
 # ============================================================================
@@ -78,7 +76,7 @@ class SubredditValidateRequest(BaseModel):
 # ============================================================================
 
 _history_lock = threading.Lock()
-_analysis_semaphore = threading.Semaphore(2)
+_analysis_semaphore = threading.Semaphore(10)
 
 def load_history() -> list:
     """Load analysis history from SQLite database (chronological: oldest first)."""
@@ -112,6 +110,12 @@ def save_history(history: list):
 async def serve_dashboard():
     """Serve the main dashboard HTML."""
     return FileResponse("static/index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/flow")
+async def serve_flow():
+    """Serve the system flow presentation."""
+    return FileResponse("static/flow.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 # ============================================================================
@@ -986,33 +990,7 @@ async def download_report(report_id: str, format: str = "markdown"):
             raise HTTPException(status_code=500, detail=f"Failed to generate report: {e}")
     raise HTTPException(status_code=404, detail="Report not found")
 
-@app.get("/api/documents")
-async def get_documents_endpoint(
-    query: str = "",
-    subreddit: str = "",
-    type: str = "",
-    sort_by: str = "comment_score",
-    sort_order: str = "desc",
-    page: int = 1,
-    limit: int = 50
-):
-    """Get paginated and filtered documents from the database."""
-    docs, total = get_documents_paginated(
-        query=query,
-        subreddit=subreddit,
-        doc_type=type,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        page=page,
-        limit=limit
-    )
-    return {
-        "documents": docs,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total + limit - 1) // limit if total > 0 else 0
-    }
+
 
 @app.get("/api/history")
 async def get_history():

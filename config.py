@@ -33,6 +33,29 @@ setup_logging()
 import logging
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# LANGSMITH TRACING
+# ============================================================================
+
+LANGSMITH_API_KEY = os.getenv("LANGCHAIN_API_KEY", "")
+LANGSMITH_TRACING = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+LANGSMITH_PROJECT = os.getenv("LANGCHAIN_PROJECT", "reddit-sentiment-rag")
+
+if LANGSMITH_TRACING and LANGSMITH_API_KEY:
+    # LANGCHAIN_TRACING_V2 and LANGCHAIN_API_KEY are already exported via load_dotenv
+    # LangChain picks them up automatically — log confirmation here.
+    import logging as _ls_log
+    _ls_log.getLogger(__name__).info(
+        f"✅ LangSmith tracing enabled → project='{LANGSMITH_PROJECT}' "
+        f"key=...{LANGSMITH_API_KEY[-6:]}"
+    )
+elif LANGSMITH_TRACING and not LANGSMITH_API_KEY:
+    import logging as _ls_log
+    _ls_log.getLogger(__name__).warning(
+        "⚠️ LANGCHAIN_TRACING_V2=true but LANGCHAIN_API_KEY is missing — tracing disabled"
+    )
+
+
 if ENV_PATH.exists():
     logger.info(f"Loaded configuration from {ENV_PATH}")
 else:
@@ -63,6 +86,9 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
 DEEP_ANALYSIS_MODEL = os.getenv("DEEP_ANALYSIS_MODEL", GOOGLE_MODEL)
+
+# Reddit Configuration
+REDDIT_SESSION_COOKIE = os.getenv("REDDIT_SESSION_COOKIE", "")
 
 def print_config_status():
     """Print the current configuration status."""
@@ -174,3 +200,14 @@ def get_langchain_vectorstore(collection_name=COLLECTION_NAME):
     )
     _vectorstores[collection_name] = vs
     return vs
+
+
+def load_prompt_text(filename: str) -> str:
+    """Load prompt template text from the prompts directory."""
+    prompt_path = BASE_DIR / "prompts" / filename
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        logger.error(f"Failed to load prompt from {prompt_path}: {e}")
+        raise

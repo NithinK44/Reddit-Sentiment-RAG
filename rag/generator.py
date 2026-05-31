@@ -12,33 +12,11 @@ from datetime import datetime
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from config import get_llm, DEFAULT_N_RESULTS, LLM_MODEL
+from config import get_llm, DEFAULT_N_RESULTS, LLM_MODEL, load_prompt_text
 
 
 # ============================================================================
-# QUICK MODE SYSTEM PROMPT — Conversational, Plain-Text Summary
-# ============================================================================
-
-QUICK_ANALYSIS_SYSTEM_PROMPT = """You are a sharp, insightful analyst summarising Reddit community sentiment.
-
-Given retrieved posts and comments about the topic, write a concise conversational paragraph
-(4–6 sentences, ~120 words) that a product manager could read in 30 seconds.
-
-RULES:
-1. Be direct and opinionated — don't hedge everything.
-2. Mention the overall sentiment clearly (positive / negative / mixed / neutral).
-3. Call out the single biggest praise and the single biggest criticism if both exist.
-4. If one side dominates, say so plainly.
-5. Do NOT produce bullet points, headers, or JSON — plain flowing prose only.
-6. Finish with a one-sentence "bottom line".
-7. Only use evidence from the provided context; never fabricate.
-
-After the prose paragraph, on two separate lines with no extra text, output:
-SENTIMENT: <Positive|Negative|Mixed|Neutral>
-CONFIDENCE: <0.0-1.0>
-
-CONTEXT (Retrieved Reddit posts and comments):
-{context}"""
+QUICK_ANALYSIS_SYSTEM_PROMPT = load_prompt_text("quick_analysis.txt")
 
 
 # ============================================================================

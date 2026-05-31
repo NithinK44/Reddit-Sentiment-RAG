@@ -1,140 +1,26 @@
 """
-Reddit Scraper — Extracted from rough.ipynb
+Reddit Scraper — Playwright Implementation
 --------------------------------------------
-Scrapes subreddit posts and comments via Reddit's public JSON API.
-Supports optional Cloudflare WARP proxy for IP rotation.
-Designed to be called from the FastAPI backend with progress callbacks.
+Scrapes subreddit posts and comments via Playwright headless browser.
+Designed to bypass 403 blocks on Reddit's API endpoints.
 """
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 import time
 import json
 import re
-import socket
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
-from config import DATA_DIR
+from playwright.sync_api import sync_playwright
 
-
-# ============================================================================
-# WARP PROXY (OPTIONAL)
-# ============================================================================
-
-
-def find_warp_port() -> Optional[int]:
-    """Scans for the Cloudflare WARP Proxy port."""
-    potential_ports = [40000, 1080, 8080, 9091]
-    for port in potential_ports:
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            result = sock.connect_ex(('127.0.0.1', port))
-            sock.close()
-            if result == 0:
-                return port
-        except Exception:
-            pass
-    return None
-
-
-def get_proxy_config() -> dict:
-    """
-    Detect if WARP proxy is available. Returns proxy dict or empty dict.
-    """
-    port = find_warp_port()
-    if port:
-        proxy_url = f"socks5://127.0.0.1:{port}"
-        # Verify the proxy actually works
-        try:
-            resp = requests.get(
-                "https://api.ipify.org?format=json",
-                proxies={'http': proxy_url, 'https': proxy_url},
-                timeout=5,
-            )
-            if resp.status_code == 200:
-                return {
-                    'http': proxy_url,
-                    'https': proxy_url,
-                    '_ip': resp.json().get('ip', 'unknown'),
-                    '_port': port,
-                }
-        except Exception:
-            pass
-    return {}
-
+from config import DATA_DIR, REDDIT_SESSION_COOKIE
 
 # ============================================================================
-# COMMENT TREE PROCESSING
+# MAIN SCRAPER STATE
 # ============================================================================
 
-def process_comment_tree(
-    comment_data: dict,
-    thread_author: str,
-    depth_limits: dict,
-    current_depth: int = 0,
-) -> list:
-    """
-    Recursively builds a comment tree.
-    Injects [OP] and [MOD] tags for authority.
-    Captures 'score' for quality filtering.
-    """
-    limit = depth_limits.get(current_depth, 0)
-    if limit == 0:
-        return []
-
-    processed_comments = []
-    children = comment_data.get('children', [])[:limit + 2]
-
-    count = 0
-    for child in children:
-        if count >= limit:
-            break
-
-        data = child.get('data', {})
-        if child.get('kind') == 'more':
-            continue
-
-        body = data.get('body')
-        author = data.get('author')
-        distinguished = data.get('distinguished')
-        score = data.get('score', 0)
-
-        if body and body not in ["[deleted]", "[removed]"]:
-            # Authority injection
-            if distinguished == 'moderator':
-                body = f"🛡️ [MODERATOR]: {body}"
-            elif author == thread_author:
-                body = f"🔴 [OP/CREATOR]: {body}"
-
-            comment_obj = {
-                "body": body,
-                "score": score,
-                "replies": [],
-            }
-
-            replies_raw = data.get('replies')
-            if isinstance(replies_raw, dict):
-                reply_tree = replies_raw.get('data', {})
-                comment_obj['replies'] = process_comment_tree(
-                    reply_tree, thread_author, depth_limits, current_depth + 1
-                )
-
-            processed_comments.append(comment_obj)
-            count += 1
-
-    return processed_comments
-
-
-# ============================================================================
-# MAIN SCRAPER
-# ============================================================================
-
-# Global state for tracking scrape progress
 _scrape_state = {
     "running": False,
     "total": 0,
@@ -148,25 +34,19 @@ _scrape_state = {
 }
 _scrape_lock = threading.Lock()
 
-
 def _set_scrape_state(**kwargs):
-    """Thread-safe helper to update _scrape_state fields."""
     with _scrape_lock:
         _scrape_state.update(kwargs)
 
-
 def get_scrape_status() -> dict:
-    """Return the current scrape job status with progress calculation."""
     with _scrape_lock:
         status = dict(_scrape_state)
     
-    # Calculate progress percentage
     if status["total"] > 0:
         status["progress"] = (status["completed"] / status["total"]) * 100
     else:
         status["progress"] = 0
         
-    # Build human-readable message
     if status["running"]:
         status["message"] = f"Scraping r/{_scrape_state.get('subreddit', 'Reddit')}... ({status['completed']}/{status['total']})"
     elif status["error"]:
@@ -181,66 +61,144 @@ def get_scrape_status() -> dict:
         
     return status
 
+# ============================================================================
+# PLAYWRIGHT SCRAPING LOGIC
+# ============================================================================
+
+def setup_browser(p):
+    browser = p.chromium.launch(
+        headless=True,
+        args=[
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--dns-prefetch-disable",
+            "--disable-features=VizDisplayCompositor",
+            # Hide automation flags from Reddit's bot detection
+            "--disable-blink-features=AutomationControlled",
+        ]
+    )
+    context = browser.new_context(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        viewport={"width": 1280, "height": 800},
+        locale="en-US",
+        timezone_id="America/New_York",
+    )
+    # Hide navigator.webdriver property which Reddit checks
+    context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    if REDDIT_SESSION_COOKIE:
+        context.add_cookies([{
+            "name": "reddit_session",
+            "value": REDDIT_SESSION_COOKIE,
+            "domain": ".reddit.com",
+            "path": "/"
+        }])
+    return browser, context
+
+
+def _goto_with_challenge_wait(page, url, timeout=30000):
+    """Navigate and wait for Reddit's JS challenge to auto-resolve."""
+    for attempt in range(3):
+        try:
+            page.goto(url, wait_until="load", timeout=timeout)
+            # If Reddit served a JS challenge, it will redirect; wait for it
+            # Check if we're still on a challenge page
+            for _ in range(10):
+                current_url = page.url
+                if "js_challenge" in current_url or "challenge" in current_url:
+                    time.sleep(1.5)
+                else:
+                    break
+            return True
+        except Exception as e:
+            if attempt == 2:
+                raise e
+            time.sleep(3)
+    return False
 
 def validate_subreddit(subreddit: str) -> dict:
-    """
-    Check if a subreddit exists and return its metadata.
+    url = f"https://www.reddit.com/r/{subreddit}/about/"
+    import concurrent.futures
     
-    Args:
-        subreddit: Name of the subreddit
-        
-    Returns:
-        Dict with success=True and metadata, or success=False and error message
-    """
-    url = f"https://www.reddit.com/r/{subreddit}/about.json"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                      'AppleWebKit/537.36 (KHTML, like Gecko) '
-                      'Chrome/120.0.0.0 Safari/537.36'
-    }
-    
-    session = requests.Session()
-    
-    # Try WARP proxy if available
-    proxy_config = get_proxy_config()
-    if proxy_config:
-        session.proxies.update({
-            'http': proxy_config['http'],
-            'https': proxy_config['https'],
-        })
+    def _do_validate():
+        try:
+            with sync_playwright() as p:
+                browser, context = setup_browser(p)
+                page = context.new_page()
+                
+                _goto_with_challenge_wait(page, url)
+                
+                # Wait for actual Reddit content — shreddit-subreddit-header or r/ title
+                try:
+                    page.wait_for_selector("shreddit-subreddit-header, [data-testid='subreddit-title'], h1", timeout=10000)
+                except:
+                    pass
+                
+                display_name = ""
+                description = ""
+                subscribers = 0
+                
+                header_loc = page.locator("shreddit-subreddit-header")
+                header_found = header_loc.count() > 0
+                
+                if header_found:
+                    header = header_loc.first
+                    display_name = header.get_attribute("display-name") or ""
+                    description = header.get_attribute("description") or ""
+                    
+                    sub_count_str = (
+                        header.get_attribute("weekly-active-users") or 
+                        header.get_attribute("subscribers") or 
+                        header.get_attribute("sub-count") or 
+                        header.get_attribute("members") or 
+                        ""
+                    )
+                    if sub_count_str:
+                        try:
+                            cleaned_sub = re.sub(r'[^\d]', '', sub_count_str)
+                            if cleaned_sub:
+                                subscribers = int(cleaned_sub)
+                        except:
+                            pass
+                
+                if not display_name:
+                    h1_loc = page.locator("h1")
+                    if h1_loc.count() > 0:
+                        display_name = h1_loc.first.inner_text()
+                    else:
+                        display_name = subreddit
+                
+                if not description:
+                    try:
+                        meta_desc = page.locator("meta[name='description']").first
+                        if meta_desc.count() > 0:
+                            description = meta_desc.get_attribute("content") or ""
+                    except:
+                        pass
+                
+                page_title = page.title()
+                browser.close()
+                
+                if "404" in page_title or "page not found" in page_title.lower() or "reddit - dive into anything" in page_title.lower() or not header_found:
+                    if "private" in page_title.lower() or "banned" in page_title.lower():
+                        return {"success": False, "error": f"Subreddit 'r/{subreddit}' is private or banned."}
+                    return {"success": False, "error": f"Subreddit 'r/{subreddit}' does not exist."}
+                     
+                return {
+                    "success": True,
+                    "metadata": {
+                        "name": subreddit,
+                        "title": display_name or page_title,
+                        "subscribers": subscribers,
+                        "description": description,
+                    }
+                }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
-    try:
-        response = session.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 404:
-            return {"success": False, "error": f"Subreddit 'r/{subreddit}' does not exist."}
-        elif response.status_code == 403:
-            return {"success": False, "error": f"Subreddit 'r/{subreddit}' is private or banned."}
-        elif response.status_code != 200:
-            return {"success": False, "error": f"Reddit API error: {response.status_code}"}
-            
-        data = response.json()
-        if 'kind' not in data or data['kind'] != 't5':
-            return {"success": False, "error": f"Subreddit 'r/{subreddit}' does not exist."}
-            
-        sub_data = data.get('data', {})
-        if not sub_data.get('display_name'):
-            return {"success": False, "error": f"Subreddit 'r/{subreddit}' does not exist."}
-        
-        return {
-            "success": True,
-            "metadata": {
-                "name": sub_data.get('display_name'),
-                "title": sub_data.get('title'),
-                "subscribers": sub_data.get('subscribers'),
-                "description": sub_data.get('public_description'),
-                "created_utc": sub_data.get('created_utc'),
-                "over18": sub_data.get('over18'),
-            }
-        }
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(_do_validate).result()
 
 def scrape_subreddit(
     subreddit: str,
@@ -249,42 +207,16 @@ def scrape_subreddit(
     time_filter: str = "year",
     depth_limits: Optional[dict] = None,
 ) -> dict:
-    """
-    Scrape a subreddit and save posts as JSON files.
-
-    Args:
-        subreddit: Name of the subreddit (without r/)
-        post_limit: Number of posts to scrape (max 200)
-        sort_by: Sort method — 'top', 'hot', 'new'
-        time_filter: Time filter for 'top' — 'day', 'week', 'month', 'year', 'all'
-        depth_limits: Comment depth limits dict, e.g. {0: 25, 1: 15, 2: 10}
-
-    Returns:
-        Dict with scrape results summary
-    """
     global _scrape_state
 
     if _scrape_state["running"]:
         return {"error": "A scrape job is already running"}
 
-    ALLOWED_SORT_BY = {"best", "top", "hot", "new", "relevance"}
-    ALLOWED_TIME_FILTERS = {"hour", "day", "week", "month", "year", "all"}
-
-    sort_by = sort_by.lower()
-    time_filter = time_filter.lower()
-
-    if sort_by not in ALLOWED_SORT_BY:
-        return {"error": f"Invalid sort_by. Must be one of {ALLOWED_SORT_BY}"}
-    if sort_by == "top" and time_filter not in ALLOWED_TIME_FILTERS:
-        return {"error": f"Invalid time_filter. Must be one of {ALLOWED_TIME_FILTERS}"}
-
     if depth_limits is None:
         depth_limits = {0: 25, 1: 15, 2: 10}
 
-    # Clamp post_limit
     post_limit = max(1, min(250, post_limit))
 
-    # Reset state atomically
     with _scrape_lock:
         _scrape_state.update({
             "running": True,
@@ -295,151 +227,155 @@ def scrape_subreddit(
             "error": None,
             "warnings": [],
             "finished": False,
-            "proxy_ip": None,
+            "proxy_ip": "local-playwright",
             "posts_saved": [],
         })
 
     try:
-        # Ensure output directory exists
         output_dir = DATA_DIR / subreddit
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Setup session
-        session = requests.Session()
+        if sort_by == 'top':
+            start_url = f"https://www.reddit.com/r/{subreddit}/top/?t={time_filter}"
+        else:
+            start_url = f"https://www.reddit.com/r/{subreddit}/{sort_by}/"
 
-        # Try WARP proxy
-        proxy_config = get_proxy_config()
-        if proxy_config:
-            session.proxies.update({
-                'http': proxy_config['http'],
-                'https': proxy_config['https'],
-            })
-            _set_scrape_state(proxy_ip=proxy_config.get('_ip'))
-
-        retries = Retry(total=5, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-        session.mount('https://', HTTPAdapter(max_retries=retries))
-
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                          'AppleWebKit/537.36 (KHTML, like Gecko) '
-                          'Chrome/120.0.0.0 Safari/537.36'
-        }
-
-        posts_collected = 0
-        after = None
-
-        while posts_collected < post_limit:
-            # Build listing URL
-            if sort_by == 'top':
-                list_url = f"https://www.reddit.com/r/{subreddit}/top.json?t={time_filter}&limit=100"
-            elif sort_by == 'best':
-                list_url = f"https://www.reddit.com/r/{subreddit}/best.json?limit=100"
-            else:
-                list_url = f"https://www.reddit.com/r/{subreddit}/{sort_by}.json?limit=100"
-
-            if after:
-                list_url += f"&after={after}"
-
-            try:
-                response = session.get(list_url, headers=headers, timeout=15)
-                if response.status_code != 200:
-                    _scrape_state["error"] = f"Reddit API error: {response.status_code}"
-                    break
-                res = response.json()
-                if 'data' not in res:
-                    break
-                posts = res['data']['children']
-                after = res['data']['after']
-            except Exception as e:
-                _scrape_state["error"] = f"Listing error: {e}"
-                break
-
-            if not posts:
-                break
-
-            for post in posts:
-                if posts_collected >= post_limit:
-                    break
-
-                p_data = post['data']
-                thread_id = p_data['id']
-                thread_author = p_data.get('author')
-
-                safe_title = re.sub(r'[\x00-\x1f<>:"/\\|?*]', '', p_data['title'])[:50].strip()
-                filename = f"{thread_id}_{safe_title}.json"
-                file_path = output_dir / filename
-
-                _set_scrape_state(current_post=safe_title)
-
-                if file_path.exists():
-                    posts_collected += 1
-                    _set_scrape_state(
-                        completed=posts_collected,
-                        posts_saved=_scrape_state["posts_saved"] + [filename],
-                    )
-                    continue
-
-                thread_url = (
-                    f"https://www.reddit.com/r/{subreddit}/comments/{thread_id}/.json?sort=top"
-                )
-
+        import concurrent.futures
+        
+        def _do_scrape():
+            posts_collected_inner = 0
+            with sync_playwright() as p:
+                browser, context = setup_browser(p)
+                page = context.new_page()
+                
+                _scrape_state["message"] = f"Loading r/{subreddit}..."
+                
+                # Navigate and wait for JS challenge to resolve
+                _goto_with_challenge_wait(page, start_url)
+                
+                # Wait for actual post elements
                 try:
-                    _scrape_state["message"] = f"Scraping: {safe_title}..."
-                    thread_response = session.get(thread_url, headers=headers, timeout=15)
-                    if thread_response.status_code != 200:
-                        continue
+                    page.wait_for_selector("shreddit-post", timeout=15000)
+                except:
+                    pass
+                
+                # Scroll down to load posts
+                posts_data = []
+                for _ in range(5):
+                    try:
+                        page.wait_for_selector("shreddit-post", timeout=5000)
+                    except:
+                        break
+                    
+                    elements = page.locator("shreddit-post").all()
+                    for el in elements:
+                        try:
+                            title = el.get_attribute("post-title")
+                            url = el.get_attribute("permalink")
+                            score = el.get_attribute("score") or "0"
+                            if title and url and url not in [p_item['url'] for p_item in posts_data]:
+                                posts_data.append({"title": title, "url": url, "score": score})
+                        except:
+                            pass
+                    
+                    if len(posts_data) >= post_limit:
+                        break
                         
-                    thread_res = thread_response.json()
-                    if not isinstance(thread_res, list) or len(thread_res) < 2:
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    time.sleep(2)
+                    
+                posts_data = posts_data[:post_limit]
+                
+                for p_data in posts_data:
+                    thread_url = f"https://www.reddit.com{p_data['url']}"
+                    safe_title = re.sub(r'[\x00-\x1f<>:"/\\|?*]', '', p_data['title'])[:50].strip()
+                    filename = f"{posts_collected_inner}_{safe_title}.json"
+                    file_path = output_dir / filename
+                    
+                    _set_scrape_state(current_post=safe_title)
+                    
+                    if file_path.exists():
+                        posts_collected_inner += 1
+                        _set_scrape_state(
+                            completed=posts_collected_inner,
+                            posts_saved=_scrape_state["posts_saved"] + [filename],
+                        )
                         continue
 
-                    sort_display = sort_by.upper()
-                    if sort_by == 'top':
-                        sort_display += f" OF {time_filter.upper()}"
+                    _scrape_state["message"] = f"Scraping: {safe_title}..."
+                    
+                    thread_page = context.new_page()
+                    try:
+                        # Navigate to thread and wait for challenge + comments to load
+                        _goto_with_challenge_wait(thread_page, thread_url)
+                        try:
+                            thread_page.wait_for_selector("shreddit-comment, shreddit-post", timeout=8000)
+                        except:
+                            pass
+                        
+                        post_body = ""
+                        try:
+                            body_loc = thread_page.locator("shreddit-post div[slot='text-body']")
+                            if body_loc.count() > 0:
+                                post_body = body_loc.first.inner_text()
+                        except:
+                            pass
+                            
+                        comments = []
+                        try:
+                            thread_page.wait_for_selector("shreddit-comment", timeout=5000)
+                            comment_els = thread_page.locator("shreddit-comment").all()
+                            for c_el in comment_els[:depth_limits[0]]:
+                                try:
+                                    c_score = c_el.get_attribute("score") or "0"
+                                    c_text_loc = c_el.locator("div[slot='comment']")
+                                    c_text = c_text_loc.first.inner_text() if c_text_loc.count() > 0 else ""
+                                    if c_text:
+                                        comments.append({
+                                            "body": c_text,
+                                            "score": c_score,
+                                            "replies": []
+                                        })
+                                except:
+                                    pass
+                        except:
+                            pass
+                            
+                        doc_object = {
+                            "meta": {
+                                "title": p_data['title'],
+                                "url": thread_url,
+                                "score": p_data['score'],
+                                "flair": "",
+                                "date": str(datetime.now(timezone.utc).strftime('%Y-%m-%d')),
+                                "sort": sort_by.upper(),
+                            },
+                            "content": {
+                                "post_body": post_body,
+                                "comments": comments,
+                            },
+                        }
 
-                    structured_comments = process_comment_tree(
-                        thread_res[1]['data'],
-                        thread_author=thread_author,
-                        depth_limits=depth_limits,
-                        current_depth=0,
-                    )
+                        with open(file_path, "w", encoding="utf-8") as f:
+                            json.dump(doc_object, f, indent=4, ensure_ascii=False)
 
-                    doc_object = {
-                        "meta": {
-                            "title": p_data['title'],
-                            "url": f"https://reddit.com{p_data['permalink']}",
-                            "score": p_data.get('score', 0),
-                            "flair": p_data.get('link_flair_text'),
-                            "date": datetime.fromtimestamp(
-                                p_data.get('created_utc', 0), timezone.utc
-                            ).strftime('%Y-%m-%d'),
-                            "sort": sort_display,
-                        },
-                        "content": {
-                            "post_body": p_data.get('selftext', ''),
-                            "comments": structured_comments,
-                        },
-                    }
+                        posts_collected_inner += 1
+                        _set_scrape_state(
+                            completed=posts_collected_inner,
+                            posts_saved=_scrape_state["posts_saved"] + [filename],
+                        )
+                    except Exception as e:
+                        warning_msg = f"Error on thread {p_data['url']}: {e}"
+                        with _scrape_lock:
+                            _scrape_state["warnings"].append(warning_msg)
+                    finally:
+                        thread_page.close()
+                        
+                browser.close()
+            return posts_collected_inner
 
-                    with open(file_path, "w", encoding="utf-8") as f:
-                        json.dump(doc_object, f, indent=4, ensure_ascii=False)
-
-                    posts_collected += 1
-                    _set_scrape_state(
-                        completed=posts_collected,
-                        posts_saved=_scrape_state["posts_saved"] + [filename],
-                    )
-
-                    # Rate limit: 1 second between requests (optimized from 2s)
-                    time.sleep(1)
-
-                except Exception as e:
-                    warning_msg = f"Error on thread {thread_id}: {e}"
-                    with _scrape_lock:
-                        _scrape_state["warnings"].append(warning_msg)
-
-            if not after:
-                break
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            posts_collected = executor.submit(_do_scrape).result()
 
         _set_scrape_state(finished=True, running=False)
         return {

@@ -13,9 +13,6 @@ let emotionChartInstance = null;
 let compareSentimentChart = null;
 let compareEmotionChart = null;
 
-// Data Explorer Pagination & Filters
-let explorerPage = 1;
-let explorerLimit = 15;
 let collectionsList = [];
 
 // Init on Document Load
@@ -39,20 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
         syncBadge();
     }
 
-    // Bind explorer filters
-    const expFilters = ['explorerSubreddit', 'explorerDocType', 'explorerSortBy', 'explorerSortOrder', 'explorerSearch'];
-    expFilters.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener('change', () => { explorerPage = 1; loadExplorerData(); });
-    });
 
-    const searchInputExp = document.getElementById('explorerSearch');
-    if (searchInputExp) {
-        searchInputExp.addEventListener('input', debounce(() => {
-            explorerPage = 1;
-            loadExplorerData();
-        }, 300));
-    }
 });
 
 // Helper: Debounce utility for searches
@@ -83,9 +67,7 @@ function switchTab(tabId) {
     // Sub-routes trigger data loading
     if (tabId === 'compare') {
         populateComparisonSubreddits();
-    } else if (tabId === 'explorer') {
-        populateExplorerSubreddits();
-        loadExplorerData();
+
     } else if (tabId === 'rag') {
         if (currentStep === 3) {
             fetchStats();
@@ -525,6 +507,13 @@ async function runAnalysis() {
     btn.disabled = true;
     skeleton.style.display = 'block';
     if (statusText) statusText.textContent = 'Starting analysis...';
+    
+    // Clear and reset console
+    const consoleDiv = document.getElementById('analysisConsole');
+    if (consoleDiv) {
+        consoleDiv.innerHTML = '<div style="color:var(--text-muted)">[SYSTEM] Initializing console stream...</div>';
+    }
+    
     errorDiv.classList.remove('visible');
     document.getElementById('unifiedResults').classList.remove('visible');
     document.getElementById('quickResult').style.display = 'none';
@@ -549,6 +538,30 @@ async function runAnalysis() {
         eventSource.onmessage = async (event) => {
             const eData = JSON.parse(event.data);
             if (statusText) statusText.textContent = eData.message || 'Analyzing...';
+            
+            // Feed console box
+            const consoleDiv = document.getElementById('analysisConsole');
+            if (consoleDiv && eData.message) {
+                const timestamp = new Date(eData.timestamp ? eData.timestamp * 1000 : Date.now()).toLocaleTimeString();
+                const logLine = document.createElement('div');
+                
+                let badgeColor = 'var(--text-secondary)';
+                if (eData.status === 'completed') {
+                    badgeColor = 'var(--accent-green)';
+                } else if (eData.status === 'failed') {
+                    badgeColor = 'var(--accent-red)';
+                } else if (eData.status === 'running') {
+                    if (eData.message.includes('Agent 1')) {
+                        badgeColor = 'var(--accent-steel)';
+                    } else if (eData.message.includes('Agent 2') || eData.message.includes('Agent 3') || eData.message.includes('Agent 4') || eData.message.includes('Reflection')) {
+                        badgeColor = 'var(--accent-orange)';
+                    }
+                }
+                
+                logLine.innerHTML = `<span style="color:var(--text-muted)">[${timestamp}]</span> <span style="color:${badgeColor}; font-weight: 600;">[${eData.status.toUpperCase()}]</span> ${eData.message}`;
+                consoleDiv.appendChild(logLine);
+                consoleDiv.scrollTop = consoleDiv.scrollHeight;
+            }
             
             if (eData.status === 'completed' || eData.status === 'failed') {
                 eventSource.close();
@@ -1124,142 +1137,4 @@ function renderCompareCharts(subA, subB, reportA, reportB) {
     }
 }
 
-// ── Raw Data Explorer Dashboard ──────────────────────────────
-function populateExplorerSubreddits() {
-    const select = document.getElementById('explorerSubreddit');
-    if (!select) return;
 
-    // Use available collections list
-    select.innerHTML = '<option value="">-- All Subreddits --</option>' + 
-        collectionsList.map(c => `<option value="${c.name}">r/${c.name}</option>`).join('');
-}
-
-async function loadExplorerData() {
-    const subreddit = document.getElementById('explorerSubreddit').value;
-    const docType = document.getElementById('explorerDocType').value;
-    const sortBy = document.getElementById('explorerSortBy').value;
-    const sortOrder = document.getElementById('explorerSortOrder').value;
-    const search = document.getElementById('explorerSearch').value.trim();
-
-    const tbody = document.getElementById('explorerTableBody');
-    const tableSkeleton = document.getElementById('explorerTableSkeleton');
-    if (tbody) tbody.innerHTML = '';
-    if (tableSkeleton) tableSkeleton.style.display = 'block';
-
-    try {
-        const queryParams = new URLSearchParams({
-            subreddit: subreddit,
-            type: docType,
-            sort_by: sortBy,
-            sort_order: sortOrder,
-            query: search,
-            page: explorerPage,
-            limit: explorerLimit
-        });
-
-        const res = await fetch(`/api/documents?${queryParams.toString()}`);
-        const data = await res.json();
-
-        if (tableSkeleton) tableSkeleton.style.display = 'none';
-
-        if (data.documents && data.documents.length > 0) {
-            tbody.innerHTML = data.documents.map(doc => {
-                const subName = extractSubredditFromUrl(doc.post_url) || 'r/reddit';
-                const dateShort = doc.post_date ? doc.post_date.split('T')[0] : 'N/A';
-                const score = doc.type === 'post' ? doc.post_score : doc.comment_score;
-                
-                return `<tr onclick="openDocDetailModal(${encodeURIComponent(JSON.stringify(doc))})">
-                    <td>r/${subName}</td>
-                    <td><span class="doc-type-tag ${doc.type}">${doc.type}</span></td>
-                    <td class="text-truncate" title="${escapeHtml(doc.content)}">${escapeHtml(doc.content)}</td>
-                    <td style="font-family:'JetBrains Mono',monospace">⬆️ ${score}</td>
-                    <td style="text-align:center">${doc.depth}</td>
-                    <td>${dateShort}</td>
-                </tr>`;
-            }).join('');
-        } else {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 30px; color: var(--text-secondary)">No documents found in SQLite database. Scrape a subreddit to populate.</td></tr>`;
-        }
-
-        renderExplorerPagination(data.page, data.total_pages, data.total);
-    } catch (e) {
-        if (tableSkeleton) tableSkeleton.style.display = 'none';
-        if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px; color: var(--accent-red)">Error loading explorer data: ${e.message}</td></tr>`;
-        }
-    }
-}
-
-function renderExplorerPagination(page, totalPages, totalDocs) {
-    const pageNumText = document.getElementById('explorerPageNum');
-    const prevBtn = document.getElementById('explorerPrevBtn');
-    const nextBtn = document.getElementById('explorerNextBtn');
-    
-    explorerPage = page;
-
-    if (pageNumText) {
-        pageNumText.textContent = totalDocs > 0 ? `Page ${page} of ${totalPages} (Total: ${totalDocs})` : '0 documents';
-    }
-
-    if (prevBtn) prevBtn.disabled = (page <= 1);
-    if (nextBtn) nextBtn.disabled = (page >= totalPages || totalPages === 0);
-}
-
-function explorerPrevPage() {
-    if (explorerPage > 1) {
-        explorerPage--;
-        loadExplorerData();
-    }
-}
-
-function explorerNextPage() {
-    explorerPage++;
-    loadExplorerData();
-}
-
-// ── Document Detail Modal ────────────────────────────────────
-function openDocDetailModal(docJsonEsc) {
-    const doc = JSON.parse(decodeURIComponent(docJsonEsc));
-    const modal = document.getElementById('docDetailModal');
-    if (!modal) return;
-
-    const subName = extractSubredditFromUrl(doc.post_url) || 'r/reddit';
-    
-    document.getElementById('modalSubreddit').textContent = `r/${subName}`;
-    document.getElementById('modalDocId').textContent = doc.doc_id;
-    document.getElementById('modalType').textContent = doc.type.toUpperCase();
-    document.getElementById('modalType').className = `doc-type-tag ${doc.type}`;
-    document.getElementById('modalScore').textContent = `⬆️ ${doc.type === 'post' ? doc.post_score : doc.comment_score}`;
-    document.getElementById('modalDate').textContent = doc.post_date ? new Date(doc.post_date).toLocaleString() : 'N/A';
-    document.getElementById('modalDepth').textContent = doc.depth;
-    
-    document.getElementById('modalPostTitle').textContent = doc.post_title || 'N/A';
-    document.getElementById('modalPostUrl').href = doc.post_url;
-    document.getElementById('modalPostUrl').textContent = doc.post_url;
-    
-    document.getElementById('modalTextContent').textContent = doc.content;
-
-    modal.classList.add('active');
-}
-
-function closeDocDetailModal() {
-    const modal = document.getElementById('docDetailModal');
-    if (modal) modal.classList.remove('active');
-}
-
-// ── Raw Helper Functions ─────────────────────────────────────
-function extractSubredditFromUrl(url) {
-    if (!url) return '';
-    const m = url.match(/\/r\/([^\/]+)/);
-    return m ? m[1] : '';
-}
-
-function escapeHtml(str) {
-    if (!str) return '';
-    return str
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}

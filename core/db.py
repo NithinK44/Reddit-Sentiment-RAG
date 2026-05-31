@@ -234,70 +234,7 @@ def search_documents_fts(keyword_query: str, limit: int = 20) -> List[Dict[str, 
     finally:
         conn.close()
 
-def get_documents_paginated(query: str = "", subreddit: str = "", doc_type: str = "", 
-                            sort_by: str = "comment_score", sort_order: str = "DESC", 
-                            page: int = 1, limit: int = 50) -> Tuple[List[Dict[str, Any]], int]:
-    """Retrieve paginated documents with optional search and filters."""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        
-        where_clauses = []
-        params = []
-        
-        if query:
-            clean_query = re.sub(r'[^\w\s]', '', query).strip()
-            if clean_query:
-                fts_query = " OR ".join([f"{term}*" for term in clean_query.split() if term])
-                if fts_query:
-                    where_clauses.append("d.doc_id IN (SELECT doc_id FROM documents_fts WHERE documents_fts MATCH ?)")
-                    params.append(fts_query)
-        
-        if subreddit:
-            where_clauses.append("(d.post_url LIKE ? OR d.post_title LIKE ?)")
-            params.append(f"%/{subreddit}/%")
-            params.append(f"%{subreddit}%")
-            
-        if doc_type:
-            where_clauses.append("d.type = ?")
-            params.append(doc_type)
-            
-        where_str = ""
-        if where_clauses:
-            where_str = "WHERE " + " AND ".join(where_clauses)
-            
-        count_query = f"SELECT COUNT(*) FROM documents d {where_str}"
-        cursor.execute(count_query, params)
-        total_count = cursor.fetchone()[0]
-        
-        allowed_sort = ["comment_score", "post_score", "post_date", "depth"]
-        if sort_by not in allowed_sort:
-            sort_by = "comment_score"
-        if sort_order.upper() not in ["ASC", "DESC"]:
-            sort_order = "DESC"
-            
-        offset = (page - 1) * limit
-        
-        main_query = f"""
-        SELECT d.*
-        FROM documents d
-        {where_str}
-        ORDER BY {sort_by} {sort_order}
-        LIMIT ? OFFSET ?
-        """
-        cursor.execute(main_query, params + [limit, offset])
-        rows = cursor.fetchall()
-        
-        docs = []
-        for r in rows:
-            docs.append(dict(r))
-            
-        return docs, total_count
-    except Exception as e:
-        logger.error(f"Error getting paginated documents: {e}")
-        return [], 0
-    finally:
-        conn.close()
+
 
 # Auto-initialize DB on import
 try:

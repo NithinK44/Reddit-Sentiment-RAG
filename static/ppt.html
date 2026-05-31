@@ -640,54 +640,54 @@
             </div>
             <div class="slide-content">
                 <div class="grid-2">
-                    <div class="tech-card">
-                        <div class="tech-card-title">💡 Core Architecture Pillars</div>
-                        <ul class="bullet-list" style="margin-top: 8px;">
-                            <li><strong>Stateful Workflows:</strong> Moves away from linear RAG pipelines. Uses agent interaction graphs for analysis, verification, and formatting.</li>
-                            <li><strong>Dynamic Agent Agency:</strong> Agents are provided with specialized tools (databases, scrapers) to act upon the environment.</li>
-                            <li><strong>Dense-Sparse Hybrid Retrieval:</strong> Combines semantic search with lexical full-text index lookup for exact names and terms.</li>
-                            <li><strong>Output Reliability:</strong> Self-correcting reflection loops guarantee that generated reports strictly match structured data formats.</li>
-                        </ul>
+                    <!-- Column 1 -->
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <div class="tech-card" style="border-color: rgba(245, 158, 11, 0.15);">
+                            <div class="tech-card-title" style="color: var(--accent-orange);">🤖 AGENTS &amp; RAG</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45; margin-top: 6px;">
+                                • <strong>Gemini 3.5 Flash &amp; Flash Lite:</strong> Core LLM models configured in <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/config.py" style="color: var(--accent-orange); text-decoration: none; font-weight: 500;">config.py</a> powering orchestrator routing and deep cognitive analysis.
+                                <br>• <strong>LangGraph:</strong> Coordinates the stateful 4-agent analysis loop with validation feedback in <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/agents/rag_agent.py" style="color: var(--accent-orange); text-decoration: none; font-weight: 500;">rag_agent.py</a>.
+                                <br>• <strong>LangChain:</strong> Chains prompt templates and output parsers in <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/agents/orchestrator.py" style="color: var(--accent-orange); text-decoration: none; font-weight: 500;">orchestrator.py</a> routing.
+                                <br>• <strong>CrossEncoder Reranker:</strong> Reranks search results to optimize dense retrieval relevance inside <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/rag/retriever.py" style="color: var(--accent-orange); text-decoration: none; font-weight: 500;">retriever.py</a>.
+                            </div>
+                        </div>
+
+                        <div class="tech-card" style="border-color: rgba(16, 185, 129, 0.15);">
+                            <div class="tech-card-title" style="color: var(--accent-green);">💾 STORAGE &amp; DATA</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45; margin-top: 6px;">
+                                • <strong>ChromaDB:</strong> Vector database used to store and query dense semantic document embeddings in <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/rag/embedder.py" style="color: var(--accent-green); text-decoration: none; font-weight: 500;">embedder.py</a>.
+                                <br>• <strong>SQLite FTS5:</strong> Enables fast full-text lexical search and stores historical analysis reports inside <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/core/db.py" style="color: var(--accent-green); text-decoration: none; font-weight: 500;">db.py</a>.
+                                <br>• <strong>Reddit Public JSON API:</strong> Directly fetches comments/posts without PRAW dependencies in <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/scraper/reddit_scraper.py" style="color: var(--accent-green); text-decoration: none; font-weight: 500;">reddit_scraper.py</a>.
+                                <br>• <strong>VADER / TextBlob:</strong> Rule-based Lexicons used for quick heuristics and baseline data scoring.
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="tech-card" style="background: rgba(61,126,191,0.02); border-color: rgba(61,126,191,0.12);">
-                        <div class="tech-card-title" style="color: var(--accent-steel);">🧱 Technical Stack Components</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
-                            <div>
-                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">AGENTS &amp; RAG</div>
-                                <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
-                                    • LangGraph State Machine<br>
-                                    • LangChain Orchestration<br>
-                                    • Gemini 2.5 Flash / LLMs<br>
-                                    • CrossEncoder MS-Marco Reranker
-                                </div>
+                    <!-- Column 2 -->
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <div class="tech-card" style="border-color: rgba(56, 189, 248, 0.15);">
+                            <div class="tech-card-title" style="color: var(--accent-steel);">⚡ BACKEND WEB API</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45; margin-top: 6px;">
+                                • <strong>FastAPI:</strong> Exposes asynchronous REST routes, static dashboard assets, and job streaming endpoints in <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/app.py" style="color: var(--accent-steel); text-decoration: none; font-weight: 500;">app.py</a>.
+                                <br>• <strong>Pydantic v2:</strong> Enforces JSON schemas and validates LLM generation output in <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/agents/schemas.py" style="color: var(--accent-steel); text-decoration: none; font-weight: 500;">schemas.py</a>.
+                                <br>• <strong>Server-Sent Events (SSE):</strong> Streams background execution events directly to the UI without client polling.
                             </div>
-                            <div>
-                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">STORAGE &amp; DATA</div>
-                                <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
-                                     • ChromaDB Vector Store<br>
-                                     • SQLite FTS5 (Full-Text)<br>
-                                     • VADER / TextBlob Lexicon<br>
-                                     • Reddit Public JSON API
-                                </div>
+                        </div>
+
+                        <div class="tech-card" style="border-color: rgba(139, 92, 246, 0.15);">
+                            <div class="tech-card-title" style="color: #a78bfa;">📊 FRONTEND DASHBOARD</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45; margin-top: 6px;">
+                                • <strong>HTML5 &amp; Vanilla CSS:</strong> Builds the responsive dark-themed dashboard grid in <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/static/index.html" style="color: #a78bfa; text-decoration: none; font-weight: 500;">index.html</a>.
+                                <br>• <strong>Chart.js:</strong> Renders interactive sentiment donut charts and emotional radars in <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/static/app.js" style="color: #a78bfa; text-decoration: none; font-weight: 500;">app.js</a>.
+                                <br>• <strong>Marked.js:</strong> Compiles and renders rich text markdown documents in the browser.
                             </div>
-                            <div>
-                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">BACKEND WEB API</div>
-                                <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
-                                    • FastAPI (ASGI framework)<br>
-                                    • Pydantic v2 Models<br>
-                                    • Server-Sent Events (SSE)<br>
-                                    • Asynchronous job store
-                                </div>
-                            </div>
-                            <div>
-                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">FRONTEND DASHBOARD</div>
-                                <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
-                                    • HTML5 &amp; Vanilla CSS3<br>
-                                    • Responsive layout grid<br>
-                                    • Chart.js (Charts &amp; Radars)<br>
-                                    • Marked.js Markdown rendering
-                                </div>
+                        </div>
+
+                        <div class="tech-card" style="border-color: rgba(236, 72, 153, 0.2); background: rgba(236, 72, 153, 0.015);">
+                            <div class="tech-card-title" style="color: #ec4899;">🔌 MCP INTEGRATION (NEW)</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45; margin-top: 6px;">
+                                • <strong>FastMCP Server:</strong> Exposes the RAG agent pipeline to desktop AI environments inside <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/mcp_server.py" style="color: #ec4899; text-decoration: none; font-weight: 500;">mcp_server.py</a>.
+                                <br>• <strong>Claude Desktop Config:</strong> Easy local integration via <a href="file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/claude_desktop_config.example.json" style="color: #ec4899; text-decoration: none; font-weight: 500;">config JSON template</a>.
                             </div>
                         </div>
                     </div>
@@ -851,12 +851,12 @@
                     <div class="tech-card">
                         <div class="tech-card-title">🌐 Why Stateful Agent Graphs?</div>
                         <div class="tech-card-desc">
-                            Linear chains often fail when executing complex tasks because LLMs are prone to syntax mistakes, semantic omissions, and format drift. 
+                            Linear RAG pipelines fail under complex tasks due to semantic drift, formatting issues, and arithmetic errors.
                             <br><br>
-                            By setting up a stateful loop with <strong>LangGraph</strong>:
-                            <br>• The system maintains a shared state object (<code>SentimentState</code>) across all nodes.
-                            <br>• We can inspect and validate the intermediate state after each agent's execution.
-                            <br>• Conditional routing handles edge cases: validation errors trigger correction nodes rather than crashing.
+                            Our stateful <strong>LangGraph</strong> topology provides:
+                            <br>• <strong>Shared Context:</strong> Maintains a thread-safe <code>SentimentState</code> across nodes.
+                            <br>• <strong>Intermediary Checks:</strong> Evaluates data quality after each sub-agent execution.
+                            <br>• <strong>Fault-Tolerant Routing:</strong> Redirects errors to correction loops instead of throwing runtime API exceptions.
                         </div>
                     </div>
 
@@ -901,7 +901,7 @@
             </div>
             <div class="slide-content" style="justify-content: flex-start;">
                 <div style="background: rgba(56, 189, 248, 0.03); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 20px; font-size: 0.85rem; line-height: 1.5; color: var(--text-secondary);">
-                    <strong>💡 Tier 2 Separation of Concerns:</strong> A single model attempting to retrieve context, extract raw facts, analyze sentiment, rate emotions, and compile valid JSON often fails. Breaking the workflow into a stateful LangGraph pipeline allows each agent to focus on a single cognitive task, ending with a strict self-correcting validation step.
+                    <strong>💡 Tier 2 Stateful Loop:</strong> Each sub-agent runs as a **separate sequential LLM call** over a shared state. This eliminates cognitive overload and allows setting task-specific parameters (e.g., low temperature `0.1` for extraction/synthesis, higher `0.2` for sentiment analysis).
                 </div>
 
                 <div class="tabs-header">
@@ -1014,8 +1014,8 @@
 
                         <div class="tech-card">
                             <div style="font-weight: 700; font-size: 0.88rem; color: var(--accent-green); margin-bottom: 6px;">🔄 Reflection &amp; Fix Node</div>
-                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
-                                If checks fail or Pydantic throws an error, the state routes to <code>reflect_and_fix</code>. The correction assistant receives the invalid payload and errors, rewriting the output. The loop runs up to <strong>2 times</strong> before resorting to an structured fallback template.
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.45;">
+                                If validation checks fail, the state routes to <code>reflect_and_fix</code>. The correction LLM receives the invalid payload and error stack, repair-writing the JSON output. Runs up to <strong>2 retries</strong> before applying a structured fallback template.
                             </div>
                         </div>
                     </div>
@@ -1090,7 +1090,67 @@
             </div>
         </div>
 
-        <!-- SLIDE 10: USER DASHBOARD & COMPARISON -->
+        <!-- SLIDE 10: FASTAPI REST ENDPOINTS -->
+        <div class="slide" id="slide-8b">
+            <div class="slide-header">
+                <div class="slide-title-area">
+                    <h2><span class="slide-icon">📡</span> FastAPI REST API &amp; Async Job Engine</h2>
+                    <div class="slide-subtitle">How the backend exposes ingestion, streaming sentiment jobs, and exports.</div>
+                </div>
+                <div class="slide-tag">app.py Backend</div>
+            </div>
+            <div class="slide-content">
+                <div class="grid-2">
+                    <div class="bullet-list">
+                        <p style="font-size: 0.95rem; color: var(--text-primary); margin-bottom: 8px; line-height: 1.5;">
+                            The FastAPI application in <code>app.py</code> acts as an asynchronous job queue and dashboard server:
+                        </p>
+                        <div class="tech-card" style="margin-bottom: 12px; border-color: rgba(56, 189, 248, 0.12);">
+                            <div style="font-weight: 700; font-size: 0.88rem; color: var(--accent-orange); margin-bottom: 6px;">📥 Inbound Ingestion Services</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.45;">
+                                • <code>POST /api/scrape</code> — Triggers the live scraper in a background thread.
+                                <br>• <code>POST /api/embed</code> — Generates and writes document vectors incrementally.
+                            </div>
+                        </div>
+                        <div class="tech-card" style="border-color: rgba(16, 185, 129, 0.12);">
+                            <div style="font-weight: 700; font-size: 0.88rem; color: var(--accent-green); margin-bottom: 6px;">⚡ Streaming Analysis Pipeline (SSE)</div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.45;">
+                                • <code>POST /api/analyze</code> — Spins up the RAG Agent loop, returning an active <code>job_id</code>.
+                                <br>• <code>GET /api/analyze/stream/{job_id}</code> — Server-Sent Events (SSE) channel pushing live sub-agent status events as they transition.
+                                <br>• <code>GET /api/report/{report_id}/download</code> — Formats and downloads saved reports as Markdown or styled HTML.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="code-container">
+                        <div class="code-header">SSE Event Generator Loop (app.py)</div>
+                        <div class="code-block"><span class="keyword">@app.get</span>(<span class="string">"/api/analyze/stream/{{job_id}}"</span>)
+<span class="keyword">async def</span> <span class="builtin">stream_analyze_events</span>(request: Request, job_id: str):
+    job = analysis_jobs.get_job(job_id)
+    
+    <span class="keyword">async def</span> <span class="builtin">event_generator</span>():
+        last_idx = <span class="keyword">0</span>
+        <span class="keyword">while True</span>:
+            <span class="keyword">if await</span> request.is_disconnected():
+                <span class="keyword">break</span>
+            events = job.get_events_since(last_idx)
+            <span class="keyword">for</span> e <span class="keyword">in</span> events:
+                <span class="keyword">yield</span> f<span class="string">"data: {json.dumps(e)}\\n\\n"</span>
+                last_idx += <span class="keyword">1</span>
+            <span class="keyword">if</span> job.status <span class="keyword">in</span> [<span class="string">"completed"</span>, <span class="string">"failed"</span>]:
+                <span class="keyword">break</span>
+            <span class="keyword">await</span> asyncio.sleep(<span class="keyword">0.5</span>)
+            
+    <span class="keyword">return</span> StreamingResponse(event_generator(), media_type=<span class="string">"text/event-stream"</span>)</div>
+                        <div style="margin-top: 12px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                            * Leverages FastAPI's <code>StreamingResponse</code> with standard EventSource on the frontend to push active job events without HTTP polling.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 11: USER DASHBOARD & COMPARISON -->
         <div class="slide" id="slide-9">
             <div class="slide-header">
                 <div class="slide-title-area">
@@ -1143,7 +1203,7 @@
 
         <div class="navigation-controls">
             <button class="nav-btn" id="prevBtn" onclick="navigateSlide(-1)">Previous</button>
-            <div class="slide-counter" id="slideCounter">1 / 10</div>
+            <div class="slide-counter" id="slideCounter">1 / 11</div>
             <button class="nav-btn" id="nextBtn" onclick="navigateSlide(1)">Next</button>
         </div>
     </div>

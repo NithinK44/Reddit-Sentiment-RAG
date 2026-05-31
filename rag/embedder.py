@@ -194,8 +194,9 @@ def embed_to_chromadb(subreddit: str = "reddit_sentiment"):
             _set_embed_state(error=err, running=False, finished=True)
             return {"error": err}
 
+        from config import get_embedding_function
         client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
-        embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
+        embedding_fn = get_embedding_function()
         collection = client.get_or_create_collection(name=subreddit, embedding_function=embedding_fn, metadata={"hnsw:space": "cosine"})
 
         manifest = ManifestManager(data_path)
