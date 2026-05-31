@@ -150,7 +150,8 @@ def reciprocal_rank_fusion(vector_docs: list, keyword_docs: list, k: int = 60) -
 def hybrid_retrieve(query: str, n_results: int = DEFAULT_N_RESULTS,
                     min_score: int = 5, use_multi_query: bool = True,
                     collection_name: str = "reddit_sentiment",
-                    forced_strategy: str = "agentic"):
+                    forced_strategy: str = "agentic",
+                    precomputed_variants: list = None):
     """
     Agentic Hybrid Retrieval.
     Returns (List[Document], strategy_label: str)
@@ -158,18 +159,26 @@ def hybrid_retrieve(query: str, n_results: int = DEFAULT_N_RESULTS,
     # Short-circuit: if strategy is already forced, skip the LLM router call
     if forced_strategy and forced_strategy.upper() in ["SEMANTIC", "HYBRID"]:
         strategy = forced_strategy.upper()
-        variants = []
+        variants = precomputed_variants if precomputed_variants is not None else []
         logger.info(f"🎯 Forced strategy: {strategy} — skipping LLM router call")
-        if use_multi_query:
+        if use_multi_query and not variants:
             # Still need query variants; call LLM but only for variants, not strategy
             _, variants = get_strategy_and_variants(query)
         queries = [query] + variants[:3]
     else:
         if use_multi_query:
-            strategy, variants = get_strategy_and_variants(query)
+            if precomputed_variants:
+                strategy = "SEMANTIC"
+                variants = precomputed_variants
+            else:
+                strategy, variants = get_strategy_and_variants(query)
             queries = [query] + variants[:3]
         else:
-            strategy, _ = get_strategy_and_variants(query)
+            if precomputed_variants:
+                strategy = "SEMANTIC"
+                variants = precomputed_variants
+            else:
+                strategy, _ = get_strategy_and_variants(query)
             queries = [query]
 
     vectorstore = get_langchain_vectorstore(collection_name)

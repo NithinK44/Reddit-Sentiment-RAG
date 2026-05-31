@@ -572,13 +572,33 @@ async function runAnalysis() {
                     btn.disabled = false;
                     skeleton.style.display = 'none';
                 } else {
+                    // Retry fetching status up to 5 times to handle race conditions
+                    // where the result may not be stored yet when the SSE event fires.
+                    const fetchResult = async (retries = 5, delayMs = 500) => {
+                        for (let i = 0; i < retries; i++) {
+                            try {
+                                const statusRes = await fetch(`/api/analyze/status/${jobId}`);
+                                if (!statusRes.ok) throw new Error(`Status ${statusRes.status}`);
+                                const statusData = await statusRes.json();
+                                if (statusData.result && statusData.result.report) {
+                                    return statusData.result;
+                                }
+                                // Result not ready yet — wait and retry
+                            } catch (err) {
+                                if (i === retries - 1) throw err;
+                            }
+                            await new Promise(r => setTimeout(r, delayMs));
+                        }
+                        throw new Error('Report result unavailable after multiple retries');
+                    };
+
                     try {
-                        const statusRes = await fetch(`/api/analyze/status/${jobId}`);
-                        const statusData = await statusRes.json();
-                        renderUnifiedReport(currentMode, statusData.result.report);
+                        const result = await fetchResult();
+                        renderUnifiedReport(result.mode, result.report);
                         fetchHistory();
                     } catch (e) {
-                        errorDiv.textContent = `❌ Failed to load final report`;
+                        console.error('Error rendering report:', e);
+                        errorDiv.textContent = `❌ Failed to load final report: ${e.message}`;
                         errorDiv.classList.add('visible');
                     } finally {
                         btn.classList.remove('loading');
@@ -653,7 +673,7 @@ function renderUnifiedReport(mode, r) {
 
     const net = verdict.net_sentiment_score || 0;
     const netBadge = document.getElementById('netScoreBadge');
-    netBadge.textContent = (net >= 0 ? '+' : '') + net;
+    netBadge.textContent = net > 0 ? 'Positive' : (net < 0 ? 'Negative' : 'Neutral');
     netBadge.className = `net-score-badge ${net > 0 ? 'pos' : net < 0 ? 'neg' : 'zero'}`;
 
     document.getElementById('modeBadgeLabel').textContent = '🧠 DEEP';
@@ -680,7 +700,6 @@ function renderUnifiedReport(mode, r) {
     document.getElementById('pctPositive').textContent = Math.round(dist.positive_pct || 0);
     document.getElementById('pctNegative').textContent = Math.round(dist.negative_pct || 0);
     document.getElementById('pctNeutral').textContent = Math.round(dist.neutral_pct || 0);
-    document.getElementById('controversyVal').textContent = (dist.controversy_score || 0).toFixed(2);
     document.getElementById('emotionsContainer').innerHTML = (dist.dominant_emotions || []).map(e => `<span class="emotion-tag">${e}</span>`).join('');
 
     setTimeout(() => {

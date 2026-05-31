@@ -39,7 +39,9 @@ def analyze_reddit_sentiment(query: str) -> str:
         exec_sum = report.get("executive_summary", "")
         
         md = f"# Reddit Sentiment Analysis: {meta.get('query', query)}\n\n"
-        md += f"**Verdict:** {verdict.get('overall_sentiment', 'Unknown')} (Score: {verdict.get('net_sentiment_score', 0)})\n"
+        net_val = verdict.get('net_sentiment_score', 0)
+        net_txt = 'Positive' if net_val > 0 else 'Negative' if net_val < 0 else 'Neutral'
+        md += f"**Verdict:** {verdict.get('overall_sentiment', 'Unknown')} ({net_txt})\n"
         md += f"**Confidence:** {verdict.get('confidence', 0)}\n\n"
         md += f"## Executive Summary\n{exec_sum}\n\n"
         

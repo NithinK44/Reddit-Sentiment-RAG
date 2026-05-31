@@ -1056,7 +1056,7 @@ body {
     border-radius: 5px;
     font-weight: 700;
     font-size: 1rem;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Inter', sans-serif;
     margin-left: 10px
 }
 .net-score-badge.pos {

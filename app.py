@@ -159,68 +159,94 @@ async def get_stats(collection_name: str = "reddit_sentiment"):
 # API ENDPOINTS — WORD CLOUD
 # ============================================================================
 
-STOPWORDS = {"the", "and", "to", "of", "a", "in", "for", "is", "on", "that", "it", "with", "as", "was", "this", "but", "they", "are", "have", "be", "not", "we", "you", "at", "from", "or", "by", "an", "if", "my", "so", "all", "about", "can", "has", "do", "what", "just", "their", "like", "there", "out", "would", "up", "who", "more", "when", "some", "one", "them", "which", "will", "your", "than", "me", "how", "he", "been", "only", "no", "get", "because", "people", "even", "now", "any", "other", "very", "also", "then", "into", "could", "much", "think", "see", "make", "really", "know", "good", "time", "well", "way", "why", "did", "were", "had", "should", "over", "those", "these", "where", "its", "i", "it's", "don't", "i'm", "that's", "can't"}
+STOPWORDS = {
+    "the", "and", "to", "of", "a", "in", "for", "is", "on", "that", "it", "with", "as", "was", "this", "but", "they", "are", "have", "be", "not", "we", "you", "at", "from", "or", "by", "an", "if", "my", "so", "all", "about", "can", "has", "do", "what", "just", "their", "like", "there", "out", "would", "up", "who", "more", "when", "some", "one", "them", "which", "will", "your", "than", "me", "how", "he", "been", "only", "no", "get", "because", "people", "even", "now", "any", "other", "very", "also", "then", "into", "could", "much", "think", "see", "make", "really", "know", "good", "time", "well", "way", "why", "did", "were", "had", "should", "over", "those", "these", "where", "its", "i", "it's", "don't", "i'm", "that's", "can't",
+    "she", "her", "hers", "his", "him", "my", "myself", "me", "our", "ours", "ourselves", "you", "your", "yours", "yourself", "yourselves", "he", "himself", "herself", "they", "them", "their", "theirs", "themselves", "dont", "donts", "cant", "wont", "going", "go", "gone", "went", "came", "come", "get", "got", "gotten", "getting", "give", "given", "giving", "take", "took", "taken", "taking", "make", "made", "making", "think", "thought", "thinking", "know", "knew", "knowing", "known", "feel", "felt", "feeling", "work", "worked", "working", "find", "found", "finding", "said", "say", "says", "saying", "asked", "ask", "asks", "asking", "read", "reads", "reading", "help", "helped", "helping", "day", "days", "used", "use", "uses", "using", "around", "since", "need", "needs", "needed", "needing", "want", "wants", "wanted", "wanting", "look", "looks", "looked", "looking", "back", "many", "much", "some", "any", "every", "other", "others", "another", "very", "really", "quite", "extremely", "never", "always", "sometimes", "often", "usually", "just", "also", "even", "still", "well", "bad", "nice", "great", "excellent", "awesome", "terrible", "horrible"
+}
 
 @app.get("/api/wordcloud")
 async def get_wordcloud(collection_name: str = "reddit_sentiment"):
-    """Get word frequencies for a word cloud."""
+    """Get key entities and topics for word cloud visualization using LLM generation."""
     try:
         collection = get_chroma_collection(collection_name)
-        # Fetch up to 200 documents to generate the word cloud quickly
-        result = collection.get(limit=200, include=["documents"])
+        # Fetch up to 100 documents to generate topics from
+        result = collection.get(limit=100, include=["documents"])
         documents = result.get("documents", [])
         
         if not documents:
             return {"words": []}
             
-        text = " ".join(documents).lower()
-        words = re.findall(r'\b[a-z]{3,}\b', text)
-        filtered_words = [w for w in words if w not in STOPWORDS]
-        
-        counts = Counter(filtered_words)
-        # Get top 100 words to send to LLM
-        top_common = counts.most_common(100)
-        candidate_words = [word for word, count in top_common]
-        
-        # Call LLM to filter words
+        # Combine a representative sample of text chunks up to ~12000 characters
+        sample_text = ""
+        for doc in documents:
+            if len(sample_text) + len(doc) < 15000:
+                sample_text += doc + "\n---\n"
+            else:
+                break
+                
+        # Call LLM to extract topics directly from the text sample
         try:
-            llm = get_llm(temperature=0.1)
+            llm = get_llm(temperature=0.2)
             prompt = f"""
-            You are an expert at entity recognition. Filter the following list of words extracted from Reddit posts.
-            Return ONLY the words that are reasonable entities (such as people, organizations, products, locations, specific technologies, games, movies, or distinct concepts).
-            Exclude:
-            - Common filler words or stop words.
-            - Purely emotional words (e.g., 'good', 'bad', 'great', 'terrible', 'love', 'hate', 'awesome').
-            - Generic verbs or adjectives (e.g., 'running', 'big', 'small', 'make', 'think').
-            - Generic nouns that don't represent specific entities or concepts (e.g., 'thing', 'way', 'time').
+            You are analyzing a dataset of posts and comments from the r/{collection_name} subreddit.
+            Based on the text sample below, extract a list of 15 to 25 interesting, specific, and distinct search terms, entities, or discussion topics.
             
-            Input words: {json.dumps(candidate_words)}
+            Guidelines:
+            - Include specific products, companies, technologies, people, places, events, or specific local issues/concepts discussed.
+            - Each term should be short (1 to 3 words max).
+            - Exclude generic words, verbs, pronouns, prepositions, or common adjectives (e.g., do NOT return words like "she", "dont", "going", "work", "need", "feel", "about", "extremely").
+            - Exclude the subreddit name itself (e.g., do not return "chennai" or "python").
+            - Make them highly relevant and directional for a user wanting to analyze sentiment.
             
-            Return the filtered list as a JSON array of strings. Do not include any other text or code blocks, just the JSON array.
+            Text sample:
+            {sample_text}
+            
+            Return the list as a JSON array of strings. Do not include any other text or code blocks, just the JSON array.
             """
             
             response = llm.invoke(prompt)
-            content = response.content if hasattr(response, 'content') else str(response)
+            content = response.content
             
+            # Handle list-based content structures safely
+            if isinstance(content, list):
+                texts = []
+                for part in content:
+                    if isinstance(part, dict) and "text" in part:
+                        texts.append(part["text"])
+                    elif isinstance(part, str):
+                        texts.append(part)
+                    else:
+                        texts.append(str(part))
+                content = "".join(texts)
+            elif not isinstance(content, str):
+                content = str(content)
+                
             from core.llm_utils import parse_llm_json_list
             filtered_entities = parse_llm_json_list(content)
             
-            # Filter the top words to only include those approved by the LLM
-            # and limit to top 40 for display
+            # Calculate counts for the extracted topics in the original document chunks
             top_words = []
-            for word, count in top_common:
-                if word in filtered_entities:
-                    top_words.append({"text": word, "value": count})
-                    if len(top_words) >= 40:
-                        break
-                        
-            # If no entities found (unlikely), fallback to top 20 simple words
+            for idx, entity in enumerate(filtered_entities):
+                if not entity or len(entity) > 30:
+                    continue
+                # Count occurrences in documents
+                count = sum(doc.lower().count(entity.lower()) for doc in documents)
+                val = count if count > 0 else max(1, 10 - idx)
+                top_words.append({"text": entity, "value": val})
+                
+            top_words = top_words[:40]
+            
+            # If no entities found (unlikely), fallback to old counter approach
             if not top_words:
-                top_words = [{"text": word, "value": count} for word, count in counts.most_common(20)]
-                        
+                raise ValueError("No entities returned from LLM")
+                
         except Exception as llm_err:
-            logger.warning(f"LLM filtering failed: {llm_err}. Falling back to simple frequency.")
-            # Fallback to simple frequency if LLM fails
+            logger.warning(f"LLM topic generation failed: {llm_err}. Falling back to simple word frequency.")
+            # Fallback to simple word frequency if LLM fails
+            text_all = " ".join(documents).lower()
+            words_all = re.findall(r'\b[a-z]{3,}\b', text_all)
+            filtered_words = [w for w in words_all if w not in STOPWORDS]
+            counts = Counter(filtered_words)
             top_words = [{"text": word, "value": count} for word, count in counts.most_common(40)]
         
         return {"words": top_words}
@@ -327,6 +353,9 @@ async def start_analyze_sentiment(request: AnalyzeRequest):
     def run_analysis_task():
         # Semaphore protects concurrent LLM and memory usage
         with _analysis_semaphore:
+            # Set the thread-local job_id so LLM queries can retrieve it for warnings/retries
+            import config
+            config.thread_local.job_id = job_id
             try:
                 if request.mode == "quick":
                     from rag.generator import query_rag
@@ -853,7 +882,7 @@ async def download_report(report_id: str, format: str = "markdown"):
                 </div>
             </div>
             <div class="score-badge">
-                Net Sentiment Score: <span style="color: { 'var(--sentiment-pos)' if verdict.get('net_sentiment_score', 0) >= 0 else 'var(--sentiment-neg)' }; font-weight: 700;">{verdict.get('net_sentiment_score', 0)}</span>
+                Net Sentiment: <span style="color: { 'var(--sentiment-pos)' if verdict.get('net_sentiment_score', 0) >= 0 else 'var(--sentiment-neg)' }; font-weight: 700;">{ 'Positive' if verdict.get('net_sentiment_score', 0) > 0 else 'Negative' if verdict.get('net_sentiment_score', 0) < 0 else 'Neutral' }</span>
             </div>
         </div>
         
@@ -963,7 +992,7 @@ async def download_report(report_id: str, format: str = "markdown"):
 
             md_content += f"## Verdict\n"
             md_content += f"- **Overall Sentiment:** {verdict.get('overall_sentiment', 'Unknown')}\n"
-            md_content += f"- **Net Score:** {verdict.get('net_sentiment_score', 0)}\n"
+            md_content += f"- **Net Sentiment:** {'Positive' if verdict.get('net_sentiment_score', 0) > 0 else 'Negative' if verdict.get('net_sentiment_score', 0) < 0 else 'Neutral'}\n"
             md_content += f"- **Confidence:** {verdict.get('confidence', 0)}\n\n"
 
             if insights:
@@ -1045,4 +1074,10 @@ if __name__ == "__main__":
     print(f"  API Key:   {api_status}")
     print(f"\n{'=' * 60}\n")
 
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run(
+        "app:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        reload_excludes=["data/**", "scratch/**", "*.db", "*.json"]
+    )

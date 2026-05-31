@@ -21,13 +21,26 @@ from langchain_core.output_parsers import StrOutputParser
 
 from langgraph.graph import StateGraph, END
 
-from config import get_llm, LLM_MODEL, DEEP_ANALYSIS_MODEL, load_prompt_text
+from config import get_llm, LLM_MODEL, DEEP_ANALYSIS_MODEL, UPGRADED_ANALYSIS_MODEL, load_prompt_text, LANGSMITH_TRACING
 from rag.retriever import hybrid_retrieve
 from agents.schemas import UnifiedAnalysisReport, UnifiedReportMeta, make_fallback_report
 from rag.generator import format_docs
 from core.llm_utils import parse_llm_json
 from core.job_store import analysis_jobs
 from core.db import get_analysis_history
+
+# ---------------------------------------------------------------------------
+# LangSmith: traceable decorator (no-op if tracing disabled or not installed)
+# ---------------------------------------------------------------------------
+if LANGSMITH_TRACING:
+    try:
+        from langsmith import traceable
+        _traceable = traceable
+    except ImportError:
+        logger.warning("langsmith package not installed — tracing disabled")
+        _traceable = lambda **kw: (lambda f: f)
+else:
+    _traceable = lambda **kw: (lambda f: f)
 
 def _emit_progress(job_id: str, message: str):
     if job_id:
@@ -49,6 +62,7 @@ class SentimentState(TypedDict):
     doc_count: int
     collection_name: str
     forced_strategy: str
+    precomputed_variants: list  # pre-computed by Query Intelligence — skips re-routing LLM call
     job_id: str
     retry_count: int
     validation_errors: str
@@ -59,46 +73,32 @@ class SentimentState(TypedDict):
 # NODE 1: RETRIEVE
 # ============================================================================
 
-REWRITER_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", load_prompt_text("rewriter.txt")),
-    ("human", "Rewrite the query."),
-])
-
 REFLECTION_PROMPT = ChatPromptTemplate.from_messages([
     ("system", load_prompt_text("reflection.txt")),
     ("human", "Fix the JSON for query: {query}"),
 ])
 
+
 def retrieve(state: SentimentState) -> dict:
-    _emit_progress(state.get("job_id"), "Agent 1: Resolving query context and retrieving relevant documents...")
-    query = state["query"]
+    """
+    Node 1: Retrieve relevant documents.
+    Query rewriting, routing, and variant generation are pre-computed by
+    the Query Intelligence call in the orchestrator — no LLM call here.
+    """
+    _emit_progress(state.get("job_id"), "Agent 1: Retrieving relevant documents...")
+    query = state["query"]           # already rewritten by orchestrator
     coll_name = state.get("collection_name", "reddit_sentiment")
-    forced = state.get("forced_strategy", "agentic")
+    forced = state.get("forced_strategy", "SEMANTIC")  # already decided by orchestrator
+    precomputed_variants = state.get("precomputed_variants") or []
 
-    # ── Conversational Memory / Query Rewriting ───────────────────────
-    try:
-        history_entries = get_analysis_history(limit=5)
-        if history_entries:
-            formatted_history = ""
-            for h in reversed(history_entries):
-                if h["query"].strip().lower() != query.strip().lower():
-                    formatted_history += f"User Query: {h['query']}\nSystem Verdict: {h['sentiment']} (Confidence: {h['confidence']}, Net Score: {h['net_sentiment_score']})\n---\n"
-            
-            if formatted_history.strip():
-                logger.info("Found conversational history. Rewriting query...")
-                llm = get_llm(temperature=0.1)
-                chain = REWRITER_PROMPT | llm | StrOutputParser()
-                rewritten = chain.invoke({
-                    "history": formatted_history,
-                    "query": query
-                }).strip()
-                if rewritten and len(rewritten) > 3:
-                    logger.info(f"Rewrote query from '{query}' to '{rewritten}'")
-                    query = rewritten
-    except Exception as history_err:
-        logger.warning(f"Failed to apply conversational memory rewrite: {history_err}")
-
-    docs, strategy = hybrid_retrieve(query=query, n_results=15, min_score=3, use_multi_query=True, collection_name=coll_name, forced_strategy=forced)
+    docs, strategy = hybrid_retrieve(
+        query=query,
+        n_results=15,
+        min_score=3,
+        collection_name=coll_name,
+        forced_strategy=forced,
+        precomputed_variants=precomputed_variants,
+    )
 
     formatted = format_docs(docs)
     metadata_list = [doc.metadata for doc in docs]
@@ -107,7 +107,7 @@ def retrieve(state: SentimentState) -> dict:
         "retrieved_docs": docs,
         "formatted_context": formatted,
         "doc_metadata": metadata_list,
-        "retrieval_strategy": f"Agentic Router: {strategy}" if forced == "agentic" else f"Forced: {strategy}",
+        "retrieval_strategy": f"{forced} (Query Intelligence)",
         "doc_count": len(docs),
     }
 
@@ -145,7 +145,7 @@ SENTIMENT_PROMPT = ChatPromptTemplate.from_messages([
 
 def analyze_sentiment(state: SentimentState) -> dict:
     _emit_progress(state.get("job_id"), "Agent 3: Mapping emotion landscape and controversy...")
-    llm = get_llm(temperature=0.2, model_name=DEEP_ANALYSIS_MODEL)
+    llm = get_llm(temperature=0.2, model_name=UPGRADED_ANALYSIS_MODEL)
     chain = SENTIMENT_PROMPT | llm | StrOutputParser()
     result = chain.invoke({
         "extraction": state["extraction"],
@@ -170,7 +170,7 @@ def synthesize(state: SentimentState) -> dict:
     
     raw_output = state.get("raw_synthesis_output")
     if not raw_output:
-        llm = get_llm(temperature=0.1, model_name=DEEP_ANALYSIS_MODEL)
+        llm = get_llm(temperature=0.1, model_name=UPGRADED_ANALYSIS_MODEL)
         chain = SYNTHESIZER_PROMPT | llm | StrOutputParser()
         raw_output = chain.invoke({
             "extraction": state["extraction"],
@@ -346,7 +346,19 @@ logger.info("⚡ Compiling LangGraph for Sentiment Analysis...")
 COMPILED_GRAPH = build_graph()
 
 
-def run_analysis(query: str, collection_name: str = "reddit_sentiment", strategy: str = "agentic", job_id: str = "") -> dict:
+@_traceable(run_type="chain", name="Sentiment Analysis Graph")
+def run_analysis(
+    query: str,
+    collection_name: str = "reddit_sentiment",
+    strategy: str = "SEMANTIC",
+    variants: list = None,
+    job_id: str = "",
+) -> dict:
+    """
+    Runs the 4-agent LangGraph pipeline.
+    strategy and variants are pre-computed by the Query Intelligence call
+    in the orchestrator, so no additional LLM routing calls are made here.
+    """
     initial_state = {
         "query": query,
         "retrieved_docs": [],
@@ -359,6 +371,7 @@ def run_analysis(query: str, collection_name: str = "reddit_sentiment", strategy
         "doc_count": 0,
         "collection_name": collection_name,
         "forced_strategy": strategy,
+        "precomputed_variants": variants or [],
         "job_id": job_id,
         "retry_count": 0,
         "validation_errors": "",

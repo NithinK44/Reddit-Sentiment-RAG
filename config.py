@@ -7,8 +7,26 @@ live here so every module imports from one place.
 
 import os
 import sys
+import threading
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Thread-local storage to pass job_id to LLM client wrappers
+thread_local = threading.local()
+
+def emit_job_notification(msg: str):
+    """Emit a notification event to the active job, if one exists in the thread context."""
+    job_id = getattr(thread_local, 'job_id', None)
+    if job_id:
+        try:
+            from core.job_store import analysis_jobs
+            job = analysis_jobs.get_job(job_id)
+            if job:
+                job.add_event("running", msg)
+        except Exception as e:
+            # Avoid circular import or initialization logging failures, use standard print or silent fallback if logger not ready
+            pass
+
 
 # Fix encoding for Windows console (emojis)
 try:
@@ -86,9 +104,12 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
 DEEP_ANALYSIS_MODEL = os.getenv("DEEP_ANALYSIS_MODEL", GOOGLE_MODEL)
+UPGRADED_ANALYSIS_MODEL = os.getenv("UPGRADED_ANALYSIS_MODEL", DEEP_ANALYSIS_MODEL)
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "gemma-2-27b-it")
 
 # Reddit Configuration
 REDDIT_SESSION_COOKIE = os.getenv("REDDIT_SESSION_COOKIE", "")
+SCRAPER_MAX_WORKERS = int(os.getenv("SCRAPER_MAX_WORKERS", "4"))
 
 def print_config_status():
     """Print the current configuration status."""
@@ -140,41 +161,197 @@ def get_chroma_collection(collection_name=COLLECTION_NAME):
     )
 
 
+def _get_openrouter_llm(temperature: float = 0.3, model_name: str = None):
+    from langchain_openai import ChatOpenAI
+    
+    class RetryingChatOpenAI(ChatOpenAI):
+        def invoke(self, *args, **kwargs):
+            try:
+                from openai import RateLimitError
+            except ImportError:
+                class RateLimitError(Exception):
+                    pass
+            
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    return super().invoke(*args, **kwargs)
+                except (RateLimitError, Exception) as e:
+                    err_str = str(e).lower()
+                    is_quota = (
+                        isinstance(e, RateLimitError) or
+                        "429" in err_str or
+                        "rate_limit" in err_str or
+                        "ratelimit" in err_str or
+                        "quota" in err_str or
+                        "rate limit" in err_str or
+                        "limit exceeded" in err_str
+                    )
+                    if is_quota and attempt < max_retries - 1:
+                        msg = f"⚠️ OpenRouter Rate Limit (429) on attempt {attempt+1}/{max_retries}. Waiting 60 seconds before retrying..."
+                        logger.warning(f"{msg} Error: {e}")
+                        emit_job_notification(msg)
+                        time.sleep(60)
+                    else:
+                        raise e
+
+        async def ainvoke(self, *args, **kwargs):
+            try:
+                from openai import RateLimitError
+            except ImportError:
+                class RateLimitError(Exception):
+                    pass
+            
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    return await super().ainvoke(*args, **kwargs)
+                except (RateLimitError, Exception) as e:
+                    err_str = str(e).lower()
+                    is_quota = (
+                        isinstance(e, RateLimitError) or
+                        "429" in err_str or
+                        "rate_limit" in err_str or
+                        "ratelimit" in err_str or
+                        "quota" in err_str or
+                        "rate limit" in err_str or
+                        "limit exceeded" in err_str
+                    )
+                    if is_quota and attempt < max_retries - 1:
+                        msg = f"⚠️ OpenRouter Rate Limit (429) on async attempt {attempt+1}/{max_retries}. Waiting 60 seconds before retrying..."
+                        logger.warning(f"{msg} Error: {e}")
+                        emit_job_notification(msg)
+                        await asyncio.sleep(60)
+                    else:
+                        raise e
+        
+    if not OPENROUTER_API_KEY:
+        raise ValueError(
+            "OPENROUTER_API_KEY not found. "
+            "Set it in your .env file or as an environment variable. "
+        )
+        
+    active_model = model_name or LLM_MODEL
+    
+    return RetryingChatOpenAI(
+        model=active_model,
+        api_key=OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+        temperature=temperature,
+        max_tokens=10000,
+    )
+
+
 def get_llm(temperature: float = 0.3, model_name: str = None):
-    """Get the LangChain LLM instance (Google Gemini or OpenRouter)."""
+    """Get the LangChain LLM instance (Google Gemini or OpenRouter) with cross-provider fallbacks."""
+    import time
+    import asyncio
     
     if USE_GOOGLE_STUDIO:
         from langchain_google_genai import ChatGoogleGenerativeAI
         
+        class RetryingChatGoogleGenerativeAI(ChatGoogleGenerativeAI):
+            def invoke(self, *args, **kwargs):
+                try:
+                    from google.api_core.exceptions import ResourceExhausted
+                except ImportError:
+                    class ResourceExhausted(Exception):
+                        pass
+                
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        return super().invoke(*args, **kwargs)
+                    except (ResourceExhausted, Exception) as e:
+                        err_str = str(e).lower()
+                        is_quota = (
+                            isinstance(e, ResourceExhausted) or
+                            "429" in err_str or
+                            "resource_exhausted" in err_str or
+                            "resourceexhausted" in err_str or
+                            "quota" in err_str or
+                            "rate limit" in err_str or
+                            "limit exceeded" in err_str
+                        )
+                        if is_quota and attempt < max_retries - 1:
+                            msg = f"⚠️ Google AI Studio Quota Error (429) on attempt {attempt+1}/{max_retries}. Waiting 60 seconds before retrying..."
+                            logger.warning(f"{msg} Error: {e}")
+                            emit_job_notification(msg)
+                            time.sleep(60)
+                        else:
+                            # Fallback to Gemma on Google AI Studio
+                            msg = f"🚨 Google AI Studio quota exhausted/failed. Falling back to Google AI Studio Gemma ({FALLBACK_MODEL})..."
+                            logger.warning(f"{msg} Error: {e}")
+                            emit_job_notification(msg)
+                            try:
+                                fallback_llm = ChatGoogleGenerativeAI(
+                                    model=FALLBACK_MODEL,
+                                    google_api_key=GOOGLE_API_KEY,
+                                    temperature=temperature,
+                                    max_output_tokens=10000,
+                                )
+                                return fallback_llm.invoke(*args, **kwargs)
+                            except Exception as fallback_err:
+                                logger.error(f"❌ Fallback LLM also failed: {fallback_err}")
+                                raise fallback_err
+
+            async def ainvoke(self, *args, **kwargs):
+                try:
+                    from google.api_core.exceptions import ResourceExhausted
+                except ImportError:
+                    class ResourceExhausted(Exception):
+                        pass
+                
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        return await super().ainvoke(*args, **kwargs)
+                    except (ResourceExhausted, Exception) as e:
+                        err_str = str(e).lower()
+                        is_quota = (
+                            isinstance(e, ResourceExhausted) or
+                            "429" in err_str or
+                            "resource_exhausted" in err_str or
+                            "resourceexhausted" in err_str or
+                            "quota" in err_str or
+                            "rate limit" in err_str or
+                            "limit exceeded" in err_str
+                        )
+                        if is_quota and attempt < max_retries - 1:
+                            msg = f"⚠️ Google AI Studio Quota Error (429) on async attempt {attempt+1}/{max_retries}. Waiting 60 seconds before retrying..."
+                            logger.warning(f"{msg} Error: {e}")
+                            emit_job_notification(msg)
+                            await asyncio.sleep(60)
+                        else:
+                            # Fallback to Gemma on Google AI Studio
+                            msg = f"🚨 Google AI Studio quota exhausted/failed. Falling back to Google AI Studio Gemma ({FALLBACK_MODEL})..."
+                            logger.warning(f"{msg} Error: {e}")
+                            emit_job_notification(msg)
+                            try:
+                                fallback_llm = ChatGoogleGenerativeAI(
+                                    model=FALLBACK_MODEL,
+                                    google_api_key=GOOGLE_API_KEY,
+                                    temperature=temperature,
+                                    max_output_tokens=10000,
+                                )
+                                return await fallback_llm.ainvoke(*args, **kwargs)
+                            except Exception as fallback_err:
+                                logger.error(f"❌ Fallback LLM also failed: {fallback_err}")
+                                raise fallback_err
+
         if not GOOGLE_API_KEY:
             raise ValueError("GOOGLE_API_KEY not found. Set it in your .env file.")
             
         active_model = model_name or GOOGLE_MODEL
             
-        return ChatGoogleGenerativeAI(
+        return RetryingChatGoogleGenerativeAI(
             model=active_model,
             google_api_key=GOOGLE_API_KEY,
             temperature=temperature,
             max_output_tokens=10000,
         )
     else:
-        from langchain_openai import ChatOpenAI
-        
-        if not OPENROUTER_API_KEY:
-            raise ValueError(
-                "OPENROUTER_API_KEY not found. "
-                "Set it in your .env file or as an environment variable. "
-            )
-            
-        active_model = model_name or LLM_MODEL
-        
-        return ChatOpenAI(
-            model=active_model,
-            api_key=OPENROUTER_API_KEY,
-            base_url="https://openrouter.ai/api/v1",
-            temperature=temperature,
-            max_tokens=10000,
-        )
+        return _get_openrouter_llm(temperature=temperature, model_name=model_name)
 
 
 _langchain_embeddings_instance = None

@@ -15,7 +15,7 @@ from typing import Callable, Optional
 
 from playwright.sync_api import sync_playwright
 
-from config import DATA_DIR, REDDIT_SESSION_COOKIE
+from config import DATA_DIR, REDDIT_SESSION_COOKIE, SCRAPER_MAX_WORKERS
 
 # ============================================================================
 # MAIN SCRAPER STATE
@@ -37,6 +37,17 @@ _scrape_lock = threading.Lock()
 def _set_scrape_state(**kwargs):
     with _scrape_lock:
         _scrape_state.update(kwargs)
+
+def _increment_completed_posts(filename: str):
+    with _scrape_lock:
+        _scrape_state["completed"] += 1
+        # Avoid sharing list references to avoid race conditions or modifications
+        _scrape_state["posts_saved"] = list(_scrape_state["posts_saved"]) + [filename]
+
+def _add_warning(warning_msg: str):
+    with _scrape_lock:
+        # Append is atomic in Python, but using lock for consistency
+        _scrape_state["warnings"].append(warning_msg)
 
 def get_scrape_status() -> dict:
     with _scrape_lock:
@@ -87,6 +98,10 @@ def setup_browser(p):
     )
     # Hide navigator.webdriver property which Reddit checks
     context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    
+    # Intercept and block heavy resources (images, media, fonts) to optimize loading speed
+    context.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font"] else route.continue_())
+
     if REDDIT_SESSION_COOKIE:
         context.add_cookies([{
             "name": "reddit_session",
@@ -200,6 +215,110 @@ def validate_subreddit(subreddit: str) -> dict:
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         return executor.submit(_do_validate).result()
 
+def scrape_post_worker(post_tasks, subreddit, sort_by, depth_limits, output_dir):
+    """
+    Scrapes a chunk of Reddit posts sequentially using a single Playwright instance.
+    post_tasks: List of tuples (idx, p_data)
+    """
+    if not post_tasks:
+        return 0
+
+    scraped_count = 0
+    with sync_playwright() as p:
+        try:
+            browser, context = setup_browser(p)
+        except Exception as e:
+            warning_msg = f"Failed to initialize browser context for thread: {e}"
+            _add_warning(warning_msg)
+            return 0
+
+        for idx, p_data in post_tasks:
+            thread_url = f"https://www.reddit.com{p_data['url']}"
+            safe_title = re.sub(r'[\x00-\x1f<>:"/\\|?*]', '', p_data['title'])[:50].strip()
+            filename = f"{idx}_{safe_title}.json"
+            file_path = output_dir / filename
+
+            _set_scrape_state(current_post=safe_title)
+
+            if file_path.exists():
+                scraped_count += 1
+                _increment_completed_posts(filename)
+                continue
+
+            thread_page = context.new_page()
+            try:
+                # Navigate to thread and wait for challenge + comments to load
+                _goto_with_challenge_wait(thread_page, thread_url)
+                try:
+                    thread_page.wait_for_selector("shreddit-comment, shreddit-post", timeout=8000)
+                except:
+                    pass
+
+                post_body = ""
+                try:
+                    body_loc = thread_page.locator("shreddit-post div[slot='text-body']")
+                    if body_loc.count() > 0:
+                        post_body = body_loc.first.inner_text()
+                except:
+                    pass
+
+                comments = []
+                try:
+                    thread_page.wait_for_selector("shreddit-comment", timeout=5000)
+                    comment_els = thread_page.locator("shreddit-comment").all()
+                    for c_el in comment_els[:depth_limits[0]]:
+                        try:
+                            c_score = c_el.get_attribute("score") or "0"
+                            c_text_loc = c_el.locator("div[slot='comment']")
+                            c_text = c_text_loc.first.inner_text() if c_text_loc.count() > 0 else ""
+                            if c_text:
+                                comments.append({
+                                    "body": c_text,
+                                    "score": c_score,
+                                    "replies": []
+                                })
+                        except:
+                            pass
+                except:
+                    pass
+
+                doc_object = {
+                    "meta": {
+                        "title": p_data['title'],
+                        "url": thread_url,
+                        "score": p_data['score'],
+                        "flair": "",
+                        "date": str(datetime.now(timezone.utc).strftime('%Y-%m-%d')),
+                        "sort": sort_by.upper(),
+                    },
+                    "content": {
+                        "post_body": post_body,
+                        "comments": comments,
+                    },
+                }
+
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(doc_object, f, indent=4, ensure_ascii=False)
+
+                scraped_count += 1
+                _increment_completed_posts(filename)
+            except Exception as e:
+                warning_msg = f"Error on thread {p_data['url']}: {e}"
+                _add_warning(warning_msg)
+            finally:
+                try:
+                    thread_page.close()
+                except:
+                    pass
+
+        try:
+            browser.close()
+        except:
+            pass
+
+    return scraped_count
+
+
 def scrape_subreddit(
     subreddit: str,
     post_limit: int = 25,
@@ -243,12 +362,12 @@ def scrape_subreddit(
         import concurrent.futures
         
         def _do_scrape():
-            posts_collected_inner = 0
+            posts_data = []
             with sync_playwright() as p:
                 browser, context = setup_browser(p)
                 page = context.new_page()
                 
-                _scrape_state["message"] = f"Loading r/{subreddit}..."
+                _set_scrape_state(message=f"Loading r/{subreddit}...")
                 
                 # Navigate and wait for JS challenge to resolve
                 _goto_with_challenge_wait(page, start_url)
@@ -260,7 +379,6 @@ def scrape_subreddit(
                     pass
                 
                 # Scroll down to load posts
-                posts_data = []
                 for _ in range(5):
                     try:
                         page.wait_for_selector("shreddit-post", timeout=5000)
@@ -285,94 +403,36 @@ def scrape_subreddit(
                     time.sleep(2)
                     
                 posts_data = posts_data[:post_limit]
-                
-                for p_data in posts_data:
-                    thread_url = f"https://www.reddit.com{p_data['url']}"
-                    safe_title = re.sub(r'[\x00-\x1f<>:"/\\|?*]', '', p_data['title'])[:50].strip()
-                    filename = f"{posts_collected_inner}_{safe_title}.json"
-                    file_path = output_dir / filename
-                    
-                    _set_scrape_state(current_post=safe_title)
-                    
-                    if file_path.exists():
-                        posts_collected_inner += 1
-                        _set_scrape_state(
-                            completed=posts_collected_inner,
-                            posts_saved=_scrape_state["posts_saved"] + [filename],
-                        )
-                        continue
-
-                    _scrape_state["message"] = f"Scraping: {safe_title}..."
-                    
-                    thread_page = context.new_page()
-                    try:
-                        # Navigate to thread and wait for challenge + comments to load
-                        _goto_with_challenge_wait(thread_page, thread_url)
-                        try:
-                            thread_page.wait_for_selector("shreddit-comment, shreddit-post", timeout=8000)
-                        except:
-                            pass
-                        
-                        post_body = ""
-                        try:
-                            body_loc = thread_page.locator("shreddit-post div[slot='text-body']")
-                            if body_loc.count() > 0:
-                                post_body = body_loc.first.inner_text()
-                        except:
-                            pass
-                            
-                        comments = []
-                        try:
-                            thread_page.wait_for_selector("shreddit-comment", timeout=5000)
-                            comment_els = thread_page.locator("shreddit-comment").all()
-                            for c_el in comment_els[:depth_limits[0]]:
-                                try:
-                                    c_score = c_el.get_attribute("score") or "0"
-                                    c_text_loc = c_el.locator("div[slot='comment']")
-                                    c_text = c_text_loc.first.inner_text() if c_text_loc.count() > 0 else ""
-                                    if c_text:
-                                        comments.append({
-                                            "body": c_text,
-                                            "score": c_score,
-                                            "replies": []
-                                        })
-                                except:
-                                    pass
-                        except:
-                            pass
-                            
-                        doc_object = {
-                            "meta": {
-                                "title": p_data['title'],
-                                "url": thread_url,
-                                "score": p_data['score'],
-                                "flair": "",
-                                "date": str(datetime.now(timezone.utc).strftime('%Y-%m-%d')),
-                                "sort": sort_by.upper(),
-                            },
-                            "content": {
-                                "post_body": post_body,
-                                "comments": comments,
-                            },
-                        }
-
-                        with open(file_path, "w", encoding="utf-8") as f:
-                            json.dump(doc_object, f, indent=4, ensure_ascii=False)
-
-                        posts_collected_inner += 1
-                        _set_scrape_state(
-                            completed=posts_collected_inner,
-                            posts_saved=_scrape_state["posts_saved"] + [filename],
-                        )
-                    except Exception as e:
-                        warning_msg = f"Error on thread {p_data['url']}: {e}"
-                        with _scrape_lock:
-                            _scrape_state["warnings"].append(warning_msg)
-                    finally:
-                        thread_page.close()
-                        
+                page.close()
                 browser.close()
-            return posts_collected_inner
+
+            num_posts = len(posts_data)
+            if num_posts == 0:
+                return 0
+
+            _set_scrape_state(total=num_posts)
+
+            # Parallelize scraping of posts using thread workers
+            num_workers = min(SCRAPER_MAX_WORKERS, num_posts)
+            chunks = [[] for _ in range(num_workers)]
+            for idx, p_data in enumerate(posts_data):
+                chunks[idx % num_workers].append((idx, p_data))
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = [
+                    executor.submit(
+                        scrape_post_worker,
+                        chunk,
+                        subreddit,
+                        sort_by,
+                        depth_limits,
+                        output_dir
+                    )
+                    for chunk in chunks
+                ]
+                posts_collected = sum(f.result() for f in futures)
+                
+            return posts_collected
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             posts_collected = executor.submit(_do_scrape).result()

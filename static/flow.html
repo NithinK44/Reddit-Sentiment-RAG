@@ -105,6 +105,11 @@
         radial-gradient(ellipse 900px 500px at 80% 10%, rgba(72,187,120,0.10) 0%, transparent 60%),
         radial-gradient(ellipse 600px 400px at 10% 90%, rgba(99,179,237,0.08) 0%, transparent 60%);
     }
+    .slide-llm::before {
+      background:
+        radial-gradient(ellipse 900px 500px at 20% 15%, rgba(159,122,234,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 600px 400px at 80% 85%, rgba(246,201,14,0.08) 0%, transparent 60%);
+    }
 
     /* ===================== NAV ===================== */
     .nav {
@@ -601,6 +606,7 @@
     <a class="nav-pill" href="#agents">Agents</a>
     <a class="nav-pill" href="#example">Live Example</a>
     <a class="nav-pill" href="#api">API Reference</a>
+    <a class="nav-pill" href="#llm-calls">LLM Calls</a>
   </div>
 </nav>
 
@@ -609,7 +615,7 @@
   <!-- ==================== SLIDE 1: COVER ==================== -->
   <section class="slide slide-cover" id="cover">
     <div class="slide-inner">
-      <div class="slide-num"><span>01</span> / 07 — System Overview</div>
+      <div class="slide-num"><span>01</span> / 08 — System Overview</div>
       <h1 class="title">
         <span class="grad-blue">Reddit Sentiment</span><br />
         <span class="grad-orange">RAG Pipeline</span>
@@ -1262,6 +1268,142 @@
 
       <div class="highlight-box" style="margin-top:2rem;">
         <strong>Async Job Pattern:</strong> All heavy operations (scrape, embed, analyze) follow the same pattern — <strong>POST</strong> to start, receive a <code>job_id</code>, then <strong>GET /status</strong> to poll or <strong>GET /stream</strong> for real-time SSE events. No blocking requests. The frontend polls every 500ms.
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ==================== SLIDE 8: LLM CALLS & MODELS ==================== -->
+  <section class="slide slide-llm" id="llm-calls">
+    <div class="slide-inner">
+      <div class="slide-num"><span>08</span> / 08 — LLM Intelligence</div>
+      <div class="section-label sl-purple">🤖 Model Usage</div>
+      <h2 class="section-title"><span class="grad-purple">LLM Calls &amp; Models</span></h2>
+      <div class="divider div-purple"></div>
+      <p class="subtitle">
+        Every LLM invocation in the system — what it does, which model it uses, and where it lives in the code. All calls route through <code style="color:var(--accent)">get_llm()</code> in <code style="color:var(--accent)">config.py</code>, which selects between <strong>Google AI Studio</strong> (Gemini) and <strong>OpenRouter</strong> based on the <code style="color:var(--yellow)">USE_GOOGLE_STUDIO</code> env flag.
+      </p>
+
+      <!-- Provider Toggle Info -->
+      <div class="highlight-box" style="margin-bottom:2rem;">
+        <strong>Current config: <code>USE_GOOGLE_STUDIO=true</code></strong> — all calls go to Google AI Studio (Gemini).<br/>
+        Three model tiers in use: <span style="color:var(--accent);"><strong>gemini-3.1-flash-lite</strong></span> for routing &amp; utility calls, 
+        <span style="color:var(--purple);"><strong>gemini-3-flash-preview</strong></span> for extraction &amp; reflection, 
+        and <span style="color:var(--purple); text-shadow:0 0 4px rgba(159,122,234,0.4)"><strong>gemini-3.5-flash</strong></span> for high-level sentiment reasoning &amp; report synthesis.<br/>
+        On quota exhaustion (429) after 3 attempts, calls automatically fall back to <span style="color:var(--yellow);"><strong>gemma-2-27b-it</strong></span> on Google AI Studio.
+      </div>
+
+      <!-- LLM Calls Table -->
+      <table class="api-table">
+        <thead><tr>
+          <th>#</th><th>Call Site</th><th>Model</th><th>Temp</th><th>Purpose</th><th>Source</th>
+        </tr></thead>
+        <tbody>
+
+          <tr>
+            <td><span class="tag tag-purple" style="font-size:0.68rem;">01</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Query Intelligence Layer</span></td>
+            <td><span class="tag tag-blue">gemini-3.1-flash-lite</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">Consolidated single LLM call replacing Orchestrator, Retrieval Router, and Rewriter. Analyzes query intent, subreddit routing, retrieval strategy (SEMANTIC vs HYBRID), query variants, and query rewriting using conversation history. Outputs <code>{ route, subreddit, rationale, rewritten_query, retrieval_strategy, retrieval_reason, variants }</code> JSON.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">orchestrator.py:44</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-orange" style="font-size:0.68rem;">02</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Extractor Agent</span></td>
+            <td><span class="tag tag-purple">gemini-3-flash-preview</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">Node 2 of the LangGraph pipeline. Reads the retrieved Reddit context and extracts structured positive/negative facts and evidence signals.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">rag_agent.py:140</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-orange" style="font-size:0.68rem;">03</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Sentiment Analyst Agent</span></td>
+            <td><span class="tag tag-purple" style="background:var(--purple); color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.3)">gemini-3.5-flash</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.2</code></td>
+            <td><span class="endpoint-desc">Node 3 of the LangGraph pipeline. Produces the emotion map, controversy score, sentiment trajectory, and dominant emotional tone from the extractor's output.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">rag_agent.py:161</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-orange" style="font-size:0.68rem;">04</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Synthesizer Agent</span></td>
+            <td><span class="tag tag-purple" style="background:var(--purple); color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.3)">gemini-3.5-flash</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">Node 4 — the final report builder. Combines extractor + sentiment outputs into a full <code>UnifiedAnalysisReport</code> JSON with verdict, distribution, quotes, entities, and insights. Validated with Pydantic.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">rag_agent.py:186</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-red" style="font-size:0.68rem;">05</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Reflection / Self-Correction</span></td>
+            <td><span class="tag tag-purple">gemini-3-flash-preview</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">Conditional node — fires only when Pydantic/schema validation fails. Receives the error list and the broken JSON and attempts to self-correct. Retries up to 2 times before fallback.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">rag_agent.py:280</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-green" style="font-size:0.68rem;">06</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Quick Mode Generator</span></td>
+            <td><span class="tag tag-blue">gemini-3.1-flash-lite</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.3</code></td>
+            <td><span class="endpoint-desc">Single-shot LLM call used in <strong>Quick mode</strong> (skips the 4-agent pipeline). Reads retrieved docs and returns a conversational prose summary with SENTIMENT and CONFIDENCE metadata lines.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">generator.py:65</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-green" style="font-size:0.68rem;">07</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Word Cloud Topic Extractor</span></td>
+            <td><span class="tag tag-blue">gemini-3.1-flash-lite</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.2</code></td>
+            <td><span class="endpoint-desc">Dashboard utility call — samples up to 100 docs (~15k chars) and extracts 15–25 specific entities/topics for the word cloud widget. Falls back to word-frequency counting if LLM fails.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">app.py:189</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-blue" style="font-size:0.68rem;">08</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Scraper ReAct Agent</span></td>
+            <td><span class="tag tag-blue">gemini-3.1-flash-lite</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">LangGraph <code>create_react_agent</code> — decides when and how to call the <code>scrape_subreddit_tool</code> to fetch new Reddit data. Only invoked when the Orchestrator routes to <strong>"scraper"</strong>.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">scraper_agent.py:9</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-blue" style="font-size:0.68rem;">09</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Processor ReAct Agent</span></td>
+            <td><span class="tag tag-blue">gemini-3.1-flash-lite</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">LangGraph <code>create_react_agent</code> — decides when and how to call the <code>embed_data_tool</code> to ingest scraped data into ChromaDB. Only invoked in the <strong>scrape-then-analyze</strong> path.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">processor_agent.py:9</code></td>
+          </tr>
+
+        </tbody>
+      </table>
+
+      <!-- Model Tier Summary -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.25rem; margin-top:2rem;">
+        <div class="card" style="border-color:rgba(99,179,237,0.3);">
+          <div class="card-icon">⚡</div>
+          <div class="card-title" style="color:var(--accent);">gemini-3.1-flash-lite — Routing Tier</div>
+          <div class="card-body">
+            Fast, lightweight model used for all <strong>routing, rewriting, and utility</strong> calls. Low latency, minimal cost.<br/><br/>
+            <strong>Env var:</strong> <code>GOOGLE_MODEL=gemini-3.1-flash-lite</code><br/><br/>
+            <span style="color:var(--muted);">Used by: Query Intelligence Layer · Quick Mode Generator · Word Cloud Extractor · Scraper ReAct Agent · Processor ReAct Agent</span>
+          </div>
+        </div>
+        <div class="card" style="border-color:rgba(159,122,234,0.3);">
+          <div class="card-icon">🧠</div>
+          <div class="card-title" style="color:var(--purple);">gemini-3-flash-preview &amp; 3.5-flash — Deep Analysis</div>
+          <div class="card-body">
+            More capable models reserved for the <strong>4-agent LangGraph pipeline</strong> where output quality and reasoning are critical.<br/><br/>
+            <strong>gemini-3.5-flash</strong> (<code>UPGRADED_ANALYSIS_MODEL</code>): Used by Sentiment Analyst and Synthesizer.<br/>
+            <strong>gemini-3-flash-preview</strong> (<code>DEEP_ANALYSIS_MODEL</code>): Used by Extractor and Reflection / Self-Correction.
+          </div>
+        </div>
       </div>
 
     </div>
