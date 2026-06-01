@@ -8,6 +8,8 @@ live here so every module imports from one place.
 import os
 import sys
 import threading
+import time
+import asyncio
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -25,6 +27,55 @@ def emit_job_notification(msg: str):
                 job.add_event("running", msg)
         except Exception as e:
             # Avoid circular import or initialization logging failures, use standard print or silent fallback if logger not ready
+            pass
+
+
+def record_model_used(model_name: str):
+    """Record that a specific model was used during the current job execution."""
+    job_id = getattr(thread_local, 'job_id', None)
+    if job_id:
+        try:
+            from core.job_store import analysis_jobs
+            job = analysis_jobs.get_job(job_id)
+            if job:
+                with job._lock:
+                    if not hasattr(job, 'models_used') or job.models_used is None:
+                        job.models_used = []
+                    if model_name not in job.models_used:
+                        job.models_used.append(model_name)
+        except Exception:
+            pass
+
+
+def record_job_retry():
+    """Record that a 60-second rate-limit retry was triggered during the current job."""
+    job_id = getattr(thread_local, 'job_id', None)
+    if job_id:
+        try:
+            from core.job_store import analysis_jobs
+            job = analysis_jobs.get_job(job_id)
+            if job:
+                with job._lock:
+                    job.retries_occurred = getattr(job, 'retries_occurred', 0) + 1
+        except Exception:
+            pass
+
+
+def record_job_fallback(fallback_model: str):
+    """Record that a fallback model was activated during the current job."""
+    job_id = getattr(thread_local, 'job_id', None)
+    if job_id:
+        try:
+            from core.job_store import analysis_jobs
+            job = analysis_jobs.get_job(job_id)
+            if job:
+                with job._lock:
+                    job.fallback_used = True
+                    if not hasattr(job, 'models_used') or job.models_used is None:
+                        job.models_used = []
+                    if fallback_model not in job.models_used:
+                        job.models_used.append(fallback_model)
+        except Exception:
             pass
 
 
@@ -105,7 +156,9 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-1.5-flash")
 DEEP_ANALYSIS_MODEL = os.getenv("DEEP_ANALYSIS_MODEL", GOOGLE_MODEL)
 UPGRADED_ANALYSIS_MODEL = os.getenv("UPGRADED_ANALYSIS_MODEL", DEEP_ANALYSIS_MODEL)
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "gemma-2-27b-it")
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "gemma-4-31b-it")
+FORCE_FALLBACK_FOR_DEEP = os.getenv("FORCE_FALLBACK_FOR_DEEP", "False").lower() == "true"
+
 
 # Reddit Configuration
 REDDIT_SESSION_COOKIE = os.getenv("REDDIT_SESSION_COOKIE", "")
@@ -172,6 +225,7 @@ def _get_openrouter_llm(temperature: float = 0.3, model_name: str = None):
                 class RateLimitError(Exception):
                     pass
             
+            record_model_used(getattr(self, 'model', None) or "openrouter-llm")
             max_retries = 3
             for attempt in range(max_retries):
                 try:
@@ -191,6 +245,7 @@ def _get_openrouter_llm(temperature: float = 0.3, model_name: str = None):
                         msg = f"⚠️ OpenRouter Rate Limit (429) on attempt {attempt+1}/{max_retries}. Waiting 60 seconds before retrying..."
                         logger.warning(f"{msg} Error: {e}")
                         emit_job_notification(msg)
+                        record_job_retry()
                         time.sleep(60)
                     else:
                         raise e
@@ -202,6 +257,7 @@ def _get_openrouter_llm(temperature: float = 0.3, model_name: str = None):
                 class RateLimitError(Exception):
                     pass
             
+            record_model_used(getattr(self, 'model', None) or "openrouter-llm")
             max_retries = 3
             for attempt in range(max_retries):
                 try:
@@ -221,6 +277,7 @@ def _get_openrouter_llm(temperature: float = 0.3, model_name: str = None):
                         msg = f"⚠️ OpenRouter Rate Limit (429) on async attempt {attempt+1}/{max_retries}. Waiting 60 seconds before retrying..."
                         logger.warning(f"{msg} Error: {e}")
                         emit_job_notification(msg)
+                        record_job_retry()
                         await asyncio.sleep(60)
                     else:
                         raise e
@@ -247,6 +304,10 @@ def get_llm(temperature: float = 0.3, model_name: str = None):
     import time
     import asyncio
     
+    if FORCE_FALLBACK_FOR_DEEP and model_name in (DEEP_ANALYSIS_MODEL, UPGRADED_ANALYSIS_MODEL):
+        logger.info(f"🔄 Forced fallback: Overriding '{model_name}' to '{FALLBACK_MODEL}'")
+        model_name = FALLBACK_MODEL
+        
     if USE_GOOGLE_STUDIO:
         from langchain_google_genai import ChatGoogleGenerativeAI
         
@@ -258,6 +319,7 @@ def get_llm(temperature: float = 0.3, model_name: str = None):
                     class ResourceExhausted(Exception):
                         pass
                 
+                record_model_used(getattr(self, 'model', None) or "gemini")
                 max_retries = 3
                 for attempt in range(max_retries):
                     try:
@@ -277,12 +339,14 @@ def get_llm(temperature: float = 0.3, model_name: str = None):
                             msg = f"⚠️ Google AI Studio Quota Error (429) on attempt {attempt+1}/{max_retries}. Waiting 60 seconds before retrying..."
                             logger.warning(f"{msg} Error: {e}")
                             emit_job_notification(msg)
+                            record_job_retry()
                             time.sleep(60)
                         else:
                             # Fallback to Gemma on Google AI Studio
                             msg = f"🚨 Google AI Studio quota exhausted/failed. Falling back to Google AI Studio Gemma ({FALLBACK_MODEL})..."
                             logger.warning(f"{msg} Error: {e}")
                             emit_job_notification(msg)
+                            record_job_fallback(FALLBACK_MODEL)
                             try:
                                 fallback_llm = ChatGoogleGenerativeAI(
                                     model=FALLBACK_MODEL,
@@ -302,6 +366,7 @@ def get_llm(temperature: float = 0.3, model_name: str = None):
                     class ResourceExhausted(Exception):
                         pass
                 
+                record_model_used(getattr(self, 'model', None) or "gemini")
                 max_retries = 3
                 for attempt in range(max_retries):
                     try:
@@ -321,12 +386,14 @@ def get_llm(temperature: float = 0.3, model_name: str = None):
                             msg = f"⚠️ Google AI Studio Quota Error (429) on async attempt {attempt+1}/{max_retries}. Waiting 60 seconds before retrying..."
                             logger.warning(f"{msg} Error: {e}")
                             emit_job_notification(msg)
+                            record_job_retry()
                             await asyncio.sleep(60)
                         else:
                             # Fallback to Gemma on Google AI Studio
                             msg = f"🚨 Google AI Studio quota exhausted/failed. Falling back to Google AI Studio Gemma ({FALLBACK_MODEL})..."
                             logger.warning(f"{msg} Error: {e}")
                             emit_job_notification(msg)
+                            record_job_fallback(FALLBACK_MODEL)
                             try:
                                 fallback_llm = ChatGoogleGenerativeAI(
                                     model=FALLBACK_MODEL,

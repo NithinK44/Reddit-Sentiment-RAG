@@ -12,6 +12,7 @@ import logging
 import math
 import datetime
 from concurrent.futures import ThreadPoolExecutor
+from langchain_core.runnables import RunnableConfig
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document
@@ -20,6 +21,22 @@ from sentence_transformers import CrossEncoder
 from core.db import search_documents_fts
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# LangSmith: traceable decorator — makes hybrid_retrieve a child span so the
+# vectorstore retriever calls nest under the parent trace instead of creating
+# a separate root trace.
+# ---------------------------------------------------------------------------
+from config import LANGSMITH_TRACING
+if LANGSMITH_TRACING:
+    try:
+        from langsmith import traceable
+        _traceable = traceable
+    except ImportError:
+        logger.warning("langsmith package not installed — tracing disabled in retriever")
+        _traceable = lambda **kw: (lambda f: f)
+else:
+    _traceable = lambda **kw: (lambda f: f)
 
 
 from config import get_llm, get_langchain_vectorstore, DEFAULT_N_RESULTS, load_prompt_text
@@ -147,6 +164,7 @@ def reciprocal_rank_fusion(vector_docs: list, keyword_docs: list, k: int = 60) -
 # MAIN RETRIEVAL ENTRY POINT
 # ============================================================================
 
+@_traceable(run_type="retriever", name="Hybrid Retrieve")
 def hybrid_retrieve(query: str, n_results: int = DEFAULT_N_RESULTS,
                     min_score: int = 5, use_multi_query: bool = True,
                     collection_name: str = "reddit_sentiment",
@@ -185,9 +203,41 @@ def hybrid_retrieve(query: str, n_results: int = DEFAULT_N_RESULTS,
 
     # 1. Semantic / Vector Search
     base_retriever = vectorstore.as_retriever(search_kwargs={"k": n_results * 2})
-    
+
+    # Bridge LangSmith @traceable context → LangChain callback system so that
+    # vectorstore retriever spans appear as children of this span, not as new
+    # root traces.
+    #
+    # How it works:
+    #   - @traceable sets a RunTree in the current context (get_current_run_tree)
+    #   - LangChainTracer only nests a run under a parent if that parent's id is
+    #     already in its order_map (see _start_trace in langchain_core/tracers/core.py)
+    #   - We pre-seed order_map with (trace_id, dotted_order) for the current
+    #     run, so every retriever call the tracer sees is treated as its child.
+    _retriever_config: RunnableConfig | None = None
+    if LANGSMITH_TRACING:
+        try:
+            from langsmith.run_helpers import get_current_run_tree
+            from langchain_core.tracers import LangChainTracer
+            run_tree = get_current_run_tree()
+            if run_tree is not None:
+                tracer = LangChainTracer()
+                # Pre-seed the tracer's order_map so that any run whose
+                # parent_run_id == run_tree.id is nested, not made a root trace.
+                run_tree.ensure_dotted_order()
+                tracer.order_map[run_tree.id] = (run_tree.trace_id, run_tree.dotted_order)
+                _retriever_config = RunnableConfig(callbacks=[tracer])
+                logger.debug(
+                    f"LangSmith: retriever will nest under run {run_tree.id} "
+                    f"(trace {run_tree.trace_id})"
+                )
+        except Exception as _e:
+            logger.debug(f"LangSmith parent context unavailable, retriever will trace standalone: {_e}")
+
     def fetch_docs(q):
         try:
+            if _retriever_config is not None:
+                return base_retriever.invoke(q, config=_retriever_config)
             return base_retriever.invoke(q)
         except Exception as e:
             logger.warning(f"⚠️ Retrieval failed for variant '{q[:40]}...': {e}")

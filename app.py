@@ -27,6 +27,19 @@ from config import get_chroma_collection, OPENROUTER_API_KEY, GOOGLE_API_KEY, US
 from core.job_store import analysis_jobs
 import asyncio
 
+# ---------------------------------------------------------------------------
+# LangSmith: traceable decorator (no-op if tracing disabled or not installed)
+# ---------------------------------------------------------------------------
+from config import LANGSMITH_TRACING
+if LANGSMITH_TRACING:
+    try:
+        from langsmith import traceable
+        _traceable = traceable
+    except ImportError:
+        _traceable = lambda **kw: (lambda f: f)
+else:
+    _traceable = lambda **kw: (lambda f: f)
+
 app = FastAPI(
     title="Reddit Sentiment Intelligence",
     description="Multi-agent sentiment analysis for Reddit communities",
@@ -69,6 +82,18 @@ class ScrapeRequest(BaseModel):
 
 class SubredditValidateRequest(BaseModel):
     subreddit: str
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+    history: list[ChatMessage] = []
+    collection: str = "reddit_sentiment"
+    strategy: str = "agentic"
 
 
 # ============================================================================
@@ -446,6 +471,98 @@ async def stream_analyze_events(request: Request, job_id: str):
             await asyncio.sleep(0.5)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+CHAT_SYSTEM_PROMPT = """You are a sharp, conversational analyst answering questions about a Reddit community.
+You have access to the following retrieved posts and comments from the r/{collection} community as your context:
+
+{context}
+
+RULES:
+1. Be direct, conversational, and helpful.
+2. Rely ONLY on the provided context to answer questions. If the context does not contain the answer, or if you do not have enough info, say so clearly. Do NOT fabricate or make up facts.
+3. Keep your answers concise (typically 2-4 sentences unless a detailed explanation is requested).
+"""
+
+@app.post("/api/chat")
+async def chat_endpoint(request: ChatRequest):
+    """Conversational RAG Chat using the fallback model."""
+    if USE_GOOGLE_STUDIO:
+        if not GOOGLE_API_KEY:
+            raise HTTPException(status_code=400, detail="GOOGLE_API_KEY not configured. Set it in your .env file.")
+    else:
+        if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_api_key_here":
+            raise HTTPException(status_code=400, detail="OPENROUTER_API_KEY not configured. Set it in your .env file.")
+
+    try:
+        from rag.retriever import hybrid_retrieve
+        from rag.generator import format_docs
+        from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+        from config import FALLBACK_MODEL
+
+        # Get fallback model instance
+        llm = get_llm(temperature=0.3, model_name=FALLBACK_MODEL)
+
+        # Stream generator wrapped in a single LangSmith trace
+        @_traceable(run_type="chain", name="Reddit Sentiment Chat RAG")
+        async def event_generator():
+            try:
+                # 1. Retrieve relevant documents
+                docs, strategy = hybrid_retrieve(
+                    request.message,
+                    n_results=8,
+                    collection_name=request.collection,
+                    strategy=request.strategy
+                )
+                context = format_docs(docs)
+
+                # 2. Build system message with context
+                system_content = CHAT_SYSTEM_PROMPT.format(
+                    collection=request.collection,
+                    context=context
+                )
+
+                messages = [SystemMessage(content=system_content)]
+
+                # 3. Add message history
+                for msg in request.history:
+                    if msg.role == "user":
+                        messages.append(HumanMessage(content=msg.content))
+                    elif msg.role == "assistant":
+                        messages.append(AIMessage(content=msg.content))
+
+                # 4. Add latest query
+                messages.append(HumanMessage(content=request.message))
+
+                # Yield meta block first
+                meta = {
+                    "documents_analyzed": len(docs),
+                    "retrieval_strategy": strategy,
+                    "model_used": FALLBACK_MODEL
+                }
+                yield f"meta:{json.dumps(meta)}\n"
+
+                # Stream response tokens
+                async for chunk in llm.astream(messages):
+                    content = chunk.content
+                    if isinstance(content, list):
+                        for part in content:
+                            if isinstance(part, dict):
+                                if part.get("type") == "text":
+                                    yield part.get("text", "")
+                            elif isinstance(part, str):
+                                yield part
+                    elif isinstance(content, str):
+                        yield content
+            except Exception as e:
+                logger.error(f"Chat stream generation error: {e}")
+                yield f"\n[ERROR: {str(e)}]"
+
+        return StreamingResponse(event_generator(), media_type="text/plain")
+
+    except Exception as e:
+        logger.error(f"Chat endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/report/{report_id}")
@@ -860,6 +977,10 @@ async def download_report(report_id: str, format: str = "markdown"):
             <p style="color: var(--text-secondary); font-size: 1.1rem; font-style: italic; margin-bottom: 1.5rem;">{verdict.get('one_line_summary', '')}</p>
             <div class="meta-grid">
                 <div class="meta-item">
+                    <div class="meta-label">Target Subreddit</div>
+                    <div class="meta-value">r/{meta.get('collection', 'Unknown')}</div>
+                </div>
+                <div class="meta-item">
                     <div class="meta-label">Analyzed Date</div>
                     <div class="meta-value">{meta.get('timestamp', 'N/A')[:10]}</div>
                 </div>
@@ -985,8 +1106,11 @@ async def download_report(report_id: str, format: str = "markdown"):
             # Format as Markdown
             md_content = f"# Intelligence Report: {query}\n\n"
             md_content += f"**Date:** {meta.get('timestamp', 'Unknown')}\n"
-            md_content += f"**Mode:** {meta.get('mode', 'Unknown')}\n"
-            md_content += f"**Target:** {meta.get('collection', 'Unknown')}\n\n"
+            md_content += f"**Mode:** {meta.get('mode', 'Unknown').upper()}\n"
+            md_content += f"**Target Subreddit:** r/{meta.get('collection', 'Unknown')}\n"
+            md_content += f"**Docs Analyzed:** {meta.get('documents_analyzed', 0)} posts/comments\n"
+            md_content += f"**RAG Strategy:** {meta.get('retrieval_strategy', 'Unknown')}\n"
+            md_content += f"**LLM Model:** {meta.get('model_used', 'Unknown')}\n\n"
 
             md_content += f"## Executive Summary\n{exec_sum}\n\n"
 

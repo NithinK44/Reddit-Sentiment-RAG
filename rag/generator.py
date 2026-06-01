@@ -12,7 +12,7 @@ from datetime import datetime
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from config import get_llm, DEFAULT_N_RESULTS, LLM_MODEL, load_prompt_text
+from config import get_llm, DEFAULT_N_RESULTS, LLM_MODEL, load_prompt_text, USE_GOOGLE_STUDIO, GOOGLE_MODEL
 
 
 # ============================================================================
@@ -44,9 +44,24 @@ def format_docs(docs) -> str:
 # MAIN ENTRY POINT — query_rag()
 # ============================================================================
 
+# ---------------------------------------------------------------------------
+# LangSmith: traceable decorator (no-op if tracing disabled or not installed)
+# ---------------------------------------------------------------------------
+from config import LANGSMITH_TRACING
+if LANGSMITH_TRACING:
+    try:
+        from langsmith import traceable
+        _traceable = traceable
+    except ImportError:
+        _traceable = lambda **kw: (lambda f: f)
+else:
+    _traceable = lambda **kw: (lambda f: f)
+
+
 from rag.retriever import hybrid_retrieve
 
 
+@_traceable(run_type="chain", name="Reddit Sentiment Quick RAG")
 def query_rag(question: str, n_results: int = 8, collection_name: str = "reddit_sentiment", strategy: str = "agentic") -> dict:
     """
     FEAT-005 Quick Mode: Single-LLM-call conversational summary.
@@ -95,6 +110,25 @@ def query_rag(question: str, n_results: int = 8, collection_name: str = "reddit_
 
     # Return a UnifiedAnalysisReport-compatible dict so the API shape is
     # identical between Quick and Deep modes.
+    # Get actual model name and retry/fallback info from thread context
+    from config import thread_local
+    job_id = getattr(thread_local, 'job_id', None)
+    model_used = LLM_MODEL
+    fallback_used = False
+    retries_occurred = 0
+    
+    if job_id:
+        from core.job_store import analysis_jobs
+        job = analysis_jobs.get_job(job_id)
+        if job:
+            if getattr(job, 'models_used', None):
+                model_used = ", ".join(job.models_used)
+            fallback_used = getattr(job, 'fallback_used', False)
+            retries_occurred = getattr(job, 'retries_occurred', 0)
+    else:
+        if USE_GOOGLE_STUDIO:
+            model_used = GOOGLE_MODEL
+
     return {
         "meta": {
             "report_id": str(uuid.uuid4()),
@@ -103,7 +137,10 @@ def query_rag(question: str, n_results: int = 8, collection_name: str = "reddit_
             "timestamp": datetime.now().isoformat(),
             "documents_analyzed": len(docs),
             "retrieval_strategy": strategy,
-            "model_used": LLM_MODEL,
+            "model_used": model_used,
+            "fallback_used": fallback_used,
+            "retries_occurred": retries_occurred,
+            "collection": collection_name,
             "data_freshness": {
                 "earliest_post": min(dates) if dates else None,
                 "latest_post": max(dates) if dates else None,

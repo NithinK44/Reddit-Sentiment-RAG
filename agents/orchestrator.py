@@ -110,6 +110,19 @@ def run_orchestrated_analysis(query: str, collection_name: str, job_id: str = ""
 
     route = intelligence.get("route", "rag").lower()
     target_sub = intelligence.get("subreddit", collection_name)
+    
+    # Normalize subreddit name case-insensitively against active Chroma collections
+    import chromadb
+    from config import CHROMA_PERSIST_DIR
+    try:
+        client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
+        collections = client.list_collections()
+        col_map = {c.name.lower(): c.name for c in collections}
+        if target_sub.lower() in col_map:
+            target_sub = col_map[target_sub.lower()]
+    except Exception as e:
+        logger.warning(f"Failed to normalize collection name case: {e}")
+
     rewritten_query = intelligence.get("rewritten_query", query) or query
     retrieval_strategy = intelligence.get("retrieval_strategy", "SEMANTIC")
     variants = intelligence.get("variants", [])

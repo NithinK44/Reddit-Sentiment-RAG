@@ -546,12 +546,20 @@ async function runAnalysis() {
                 const logLine = document.createElement('div');
                 
                 let badgeColor = 'var(--text-secondary)';
+                const msgUpper = (eData.message || '').toUpperCase();
+                const isRetry = msgUpper.includes('RATE LIMIT') || msgUpper.includes('QUOTA') || msgUpper.includes('60 SECONDS') || msgUpper.includes('RETRY');
+                const isFallback = msgUpper.includes('FALLBACK') || msgUpper.includes('FALLING BACK') || msgUpper.includes('FALLS BACK');
+                
                 if (eData.status === 'completed') {
                     badgeColor = 'var(--accent-green)';
                 } else if (eData.status === 'failed') {
                     badgeColor = 'var(--accent-red)';
                 } else if (eData.status === 'running') {
-                    if (eData.message.includes('Agent 1')) {
+                    if (isRetry) {
+                        badgeColor = 'var(--accent-amber)';
+                    } else if (isFallback) {
+                        badgeColor = 'var(--accent-red)';
+                    } else if (eData.message.includes('Agent 1')) {
                         badgeColor = 'var(--accent-steel)';
                     } else if (eData.message.includes('Agent 2') || eData.message.includes('Agent 3') || eData.message.includes('Agent 4') || eData.message.includes('Reflection')) {
                         badgeColor = 'var(--accent-orange)';
@@ -559,6 +567,19 @@ async function runAnalysis() {
                 }
                 
                 logLine.innerHTML = `<span style="color:var(--text-muted)">[${timestamp}]</span> <span style="color:${badgeColor}; font-weight: 600;">[${eData.status.toUpperCase()}]</span> ${eData.message}`;
+                
+                if (isRetry) {
+                    logLine.style.borderLeft = '3px solid var(--accent-amber)';
+                    logLine.style.paddingLeft = '6px';
+                    logLine.style.background = 'rgba(193, 125, 46, 0.08)';
+                    logLine.style.borderRadius = '2px';
+                } else if (isFallback) {
+                    logLine.style.borderLeft = '3px solid var(--accent-red)';
+                    logLine.style.paddingLeft = '6px';
+                    logLine.style.background = 'rgba(192, 57, 43, 0.08)';
+                    logLine.style.borderRadius = '2px';
+                }
+                
                 consoleDiv.appendChild(logLine);
                 consoleDiv.scrollTop = consoleDiv.scrollHeight;
             }
@@ -649,10 +670,19 @@ function renderUnifiedReport(mode, r) {
         
         document.getElementById('quickStrategyBadge').textContent = `🔀 ${meta.retrieval_strategy || 'N/A'}`;
         
+        let modelDisplay = meta.model_used || 'N/A';
+        if (meta.fallback_used) {
+            modelDisplay += ` <span class="sentiment-badge negative" style="font-size: 0.65rem; padding: 2px 6px; margin: 0 0 0 4px; vertical-align: middle;">⚠️ Fallback Active</span>`;
+        }
+        if (meta.retries_occurred > 0) {
+            modelDisplay += ` <span class="sentiment-badge mixed" style="font-size: 0.65rem; padding: 2px 6px; margin: 0 0 0 4px; vertical-align: middle;">⏳ ${meta.retries_occurred}x Retried</span>`;
+        }
+
         document.getElementById('quickMetaInfo').innerHTML =
-            `📄 ${meta.documents_analyzed || 0} docs &nbsp;|&nbsp;
+            `📢 r/${meta.collection || 'N/A'} &nbsp;|&nbsp;
+             📄 ${meta.documents_analyzed || 0} docs &nbsp;|&nbsp;
              🔀 ${meta.retrieval_strategy || 'N/A'} &nbsp;|&nbsp;
-             🤖 ${meta.model_used || 'N/A'} &nbsp;|&nbsp;
+             🤖 ${modelDisplay} &nbsp;|&nbsp;
              📅 ${freshness.earliest_post || '?'} → ${freshness.latest_post || '?'} &nbsp;|&nbsp;
              🕐 ${meta.timestamp ? new Date(meta.timestamp).toLocaleString() : 'N/A'}`;
 
@@ -813,10 +843,19 @@ function renderUnifiedReport(mode, r) {
         document.getElementById('downloadReportBtn').style.display = 'none';
     }
     
+    let modelDisplay = meta.model_used || 'N/A';
+    if (meta.fallback_used) {
+        modelDisplay += ` <span class="sentiment-badge negative" style="font-size: 0.65rem; padding: 2px 6px; margin: 0 0 0 4px; vertical-align: middle;">⚠️ Fallback Active</span>`;
+    }
+    if (meta.retries_occurred > 0) {
+        modelDisplay += ` <span class="sentiment-badge mixed" style="font-size: 0.65rem; padding: 2px 6px; margin: 0 0 0 4px; vertical-align: middle;">⏳ ${meta.retries_occurred}x Retried</span>`;
+    }
+
     document.getElementById('metaInfo').innerHTML =
         `🆔 ${meta.report_id ? meta.report_id.slice(0,8)+'...' : 'N/A'} &nbsp;|&nbsp;
+         📢 r/${meta.collection || 'N/A'} &nbsp;|&nbsp;
          📄 ${meta.documents_analyzed||0} docs &nbsp;|&nbsp;
-         🤖 ${meta.model_used||'N/A'} &nbsp;|&nbsp;
+         🤖 ${modelDisplay} &nbsp;|&nbsp;
          🔀 ${meta.retrieval_strategy||'N/A'} &nbsp;|&nbsp;
          📅 ${freshness.earliest_post||'?'} → ${freshness.latest_post||'?'} &nbsp;|&nbsp;
          🕐 ${meta.timestamp ? new Date(meta.timestamp).toLocaleString() : 'N/A'}`;

@@ -21,7 +21,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 from langgraph.graph import StateGraph, END
 
-from config import get_llm, LLM_MODEL, DEEP_ANALYSIS_MODEL, UPGRADED_ANALYSIS_MODEL, load_prompt_text, LANGSMITH_TRACING
+from config import get_llm, LLM_MODEL, DEEP_ANALYSIS_MODEL, UPGRADED_ANALYSIS_MODEL, load_prompt_text, LANGSMITH_TRACING, USE_GOOGLE_STUDIO, GOOGLE_MODEL
 from rag.retriever import hybrid_retrieve
 from agents.schemas import UnifiedAnalysisReport, UnifiedReportMeta, make_fallback_report
 from rag.generator import format_docs
@@ -225,6 +225,25 @@ def synthesize(state: SentimentState) -> dict:
             "earliest_post": min(dates) if dates else None,
             "latest_post": max(dates) if dates else None,
         }
+        # Get actual model name and retry/fallback info from job context if available
+        model_used = LLM_MODEL
+        fallback_used = False
+        retries_occurred = 0
+        
+        job_id = state.get("job_id")
+        if job_id:
+            from core.job_store import analysis_jobs
+            job = analysis_jobs.get_job(job_id)
+            if job:
+                if getattr(job, 'models_used', None):
+                    model_used = ", ".join(job.models_used)
+                fallback_used = getattr(job, 'fallback_used', False)
+                retries_occurred = getattr(job, 'retries_occurred', 0)
+        else:
+            if USE_GOOGLE_STUDIO:
+                from config import FORCE_FALLBACK_FOR_DEEP, FALLBACK_MODEL
+                model_used = FALLBACK_MODEL if FORCE_FALLBACK_FOR_DEEP else DEEP_ANALYSIS_MODEL
+
         report_dict["meta"] = {
             "report_id": str(uuid.uuid4()),
             "query": state["query"],
@@ -232,7 +251,10 @@ def synthesize(state: SentimentState) -> dict:
             "timestamp": datetime.now().isoformat(),
             "documents_analyzed": state.get("doc_count", 0),
             "retrieval_strategy": state.get("retrieval_strategy", "hybrid"),
-            "model_used": LLM_MODEL,
+            "model_used": model_used,
+            "fallback_used": fallback_used,
+            "retries_occurred": retries_occurred,
+            "collection": state.get("collection_name", "reddit_sentiment"),
             "data_freshness": data_freshness,
         }
 
@@ -282,13 +304,33 @@ def reflect_and_fix(state: SentimentState) -> dict:
 def handle_fallback(state: SentimentState) -> dict:
     _emit_progress(state.get("job_id"), "Max validation retries reached. Creating fallback report...")
     dates = [m.get("post_date") for m in state["doc_metadata"] if m.get("post_date")]
+    
+    model_used = LLM_MODEL
+    fallback_used = False
+    retries_occurred = 0
+    job_id = state.get("job_id")
+    if job_id:
+        from core.job_store import analysis_jobs
+        job = analysis_jobs.get_job(job_id)
+        if job:
+            if getattr(job, 'models_used', None):
+                model_used = ", ".join(job.models_used)
+            fallback_used = getattr(job, 'fallback_used', False)
+            retries_occurred = getattr(job, 'retries_occurred', 0)
+    else:
+        if USE_GOOGLE_STUDIO:
+            model_used = GOOGLE_MODEL
+
     fallback = make_fallback_report(
         query=state["query"],
         mode="deep",
         raw_text=state.get("sentiment_analysis", ""),
         docs_analyzed=state.get("doc_count", 0),
         strategy=state.get("retrieval_strategy", "hybrid"),
-        model=LLM_MODEL,
+        model=model_used,
+        fallback_used=fallback_used,
+        retries_occurred=retries_occurred,
+        collection=state.get("collection_name", "reddit_sentiment"),
     )
     fallback["meta"]["data_freshness"] = {
         "earliest_post": min(dates) if dates else None,

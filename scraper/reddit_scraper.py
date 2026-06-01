@@ -86,6 +86,8 @@ def setup_browser(p):
             "--disable-gpu",
             "--dns-prefetch-disable",
             "--disable-features=VizDisplayCompositor",
+            "--disable-extensions",
+            "--mute-audio",
             # Hide automation flags from Reddit's bot detection
             "--disable-blink-features=AutomationControlled",
         ]
@@ -99,8 +101,8 @@ def setup_browser(p):
     # Hide navigator.webdriver property which Reddit checks
     context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     
-    # Intercept and block heavy resources (images, media, fonts) to optimize loading speed
-    context.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font"] else route.continue_())
+    # Intercept and block heavy resources (images, media, fonts, stylesheets) to optimize loading speed
+    context.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
 
     if REDDIT_SESSION_COOKIE:
         context.add_cookies([{
@@ -255,32 +257,45 @@ def scrape_post_worker(post_tasks, subreddit, sort_by, depth_limits, output_dir)
                     pass
 
                 post_body = ""
+                comment_count = 1  # Default to 1 to attempt comment scraping if attribute is missing
                 try:
-                    body_loc = thread_page.locator("shreddit-post div[slot='text-body']")
-                    if body_loc.count() > 0:
-                        post_body = body_loc.first.inner_text()
+                    post_loc = thread_page.locator("shreddit-post")
+                    if post_loc.count() > 0:
+                        post_el = post_loc.first
+                        body_loc = post_el.locator("div[slot='text-body']")
+                        if body_loc.count() > 0:
+                            post_body = body_loc.first.inner_text()
+                        
+                        cc_str = post_el.get_attribute("comment-count")
+                        if cc_str is not None:
+                            try:
+                                comment_count = int(cc_str)
+                            except:
+                                comment_count = 1
                 except:
                     pass
 
                 comments = []
-                try:
-                    thread_page.wait_for_selector("shreddit-comment", timeout=5000)
-                    comment_els = thread_page.locator("shreddit-comment").all()
-                    for c_el in comment_els[:depth_limits[0]]:
-                        try:
-                            c_score = c_el.get_attribute("score") or "0"
-                            c_text_loc = c_el.locator("div[slot='comment']")
-                            c_text = c_text_loc.first.inner_text() if c_text_loc.count() > 0 else ""
-                            if c_text:
-                                comments.append({
-                                    "body": c_text,
-                                    "score": c_score,
-                                    "replies": []
-                                })
-                        except:
-                            pass
-                except:
-                    pass
+                # Only wait/scrape comments if the post actually contains comments
+                if comment_count > 0:
+                    try:
+                        thread_page.wait_for_selector("shreddit-comment", timeout=5000)
+                        comment_els = thread_page.locator("shreddit-comment").all()
+                        for c_el in comment_els[:depth_limits[0]]:
+                            try:
+                                c_score = c_el.get_attribute("score") or "0"
+                                c_text_loc = c_el.locator("div[slot='comment']")
+                                c_text = c_text_loc.first.inner_text() if c_text_loc.count() > 0 else ""
+                                if c_text:
+                                    comments.append({
+                                        "body": c_text,
+                                        "score": c_score,
+                                        "replies": []
+                                    })
+                            except:
+                                pass
+                    except:
+                        pass
 
                 doc_object = {
                     "meta": {

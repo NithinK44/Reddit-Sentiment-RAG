@@ -30,6 +30,9 @@ class UnifiedReportMeta(BaseModel):
     retrieval_strategy: str = "hybrid"
     model_used: str = "gemini-2.0-flash"
     data_freshness: DataFreshness = Field(default_factory=DataFreshness)
+    fallback_used: Optional[bool] = False
+    retries_occurred: Optional[int] = 0
+    collection: str = "reddit_sentiment"
 
 
 # ============================================================================
@@ -162,7 +165,8 @@ class UnifiedAnalysisReport(BaseModel):
 
 def make_fallback_report(query: str, mode: str, raw_text: str = "",
                          docs_analyzed: int = 0, strategy: str = "hybrid",
-                         model: str = "unknown") -> dict:
+                         model: str = "unknown", fallback_used: bool = False,
+                         retries_occurred: int = 0, collection: str = "reddit_sentiment") -> dict:
     """
     Build a valid fallback UnifiedAnalysisReport when LLM JSON parsing fails.
     Guarantees all keys are present so the frontend never gets a KeyError.
@@ -174,6 +178,9 @@ def make_fallback_report(query: str, mode: str, raw_text: str = "",
             documents_analyzed=docs_analyzed,
             retrieval_strategy=strategy,
             model_used=model,
+            fallback_used=fallback_used,
+            retries_occurred=retries_occurred,
+            collection=collection,
         ),
         verdict=SentimentVerdict(
             overall_sentiment="Mixed",

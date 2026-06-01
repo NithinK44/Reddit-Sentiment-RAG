@@ -288,17 +288,39 @@
                 <div class="skeleton h-sm"></div>
             </div>
 
-            <!-- Quick Mode: Single Summary Card -->
+            <!-- Quick Mode: Conversational Chat Interface -->
             <div id="quickResult" style="display:none;margin-bottom:16px">
-                <div class="quick-summary-card">
-                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                        <div id="quickSentimentBadge" class="sentiment-badge neutral">—</div>
-                        <span id="quickModeBadge" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;background:var(--accent-orange-dim);color:var(--accent-orange);font-weight:700;letter-spacing:0.8px">⚡ QUICK</span>
-                        <span id="quickStrategyBadge" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;background:var(--accent-steel-dim);color:var(--accent-steel);font-weight:700;letter-spacing:0.5px"></span>
-                        <span id="quickConfidenceText" style="font-size:0.82rem;color:var(--text-secondary)"></span>
+                <div class="quick-chat-card card">
+                    <div class="chat-header">
+                        <div class="chat-header-brand">
+                            <span class="chat-status-dot"></span>
+                            <span id="quickModeBadge" style="font-size:0.75rem;padding:3px 10px;border-radius:4px;background:var(--accent-orange-dim);color:var(--accent-orange);font-weight:700;letter-spacing:0.8px">⚡ QUICK CHAT</span>
+                            <span id="quickStrategyBadge" style="font-size:0.75rem;padding:3px 10px;border-radius:4px;background:var(--accent-steel-dim);color:var(--accent-steel);font-weight:700;letter-spacing:0.5px"></span>
+                        </div>
+                        <button class="btn-clear-chat" id="quickChatClearBtn" onclick="clearQuickChat()">🧹 Clear Chat</button>
                     </div>
-                    <div id="quickSummaryText" class="quick-summary-text"></div>
-                    <div id="quickMetaInfo" class="quick-summary-meta"></div>
+
+                    <div class="chat-body">
+                        <!-- Welcome empty state -->
+                        <div id="quickChatWelcome" class="chat-welcome">
+                            <div class="welcome-icon">💬</div>
+                            <h3>Conversational RAG Chat</h3>
+                            <p>Ask questions about the collected Reddit posts & comments. Every query uses the fallback model and retrieves relevant context from the active collection.</p>
+                        </div>
+                        
+                        <!-- Messages list -->
+                        <div id="quickChatHistory" class="chat-history-container" style="display:none;"></div>
+                    </div>
+
+                    <div class="chat-footer">
+                        <form id="quickChatForm" onsubmit="sendQuickChatMessage(event)" class="chat-input-form">
+                            <input type="text" id="quickChatInput" class="chat-input" placeholder="Ask a question about the collection data..." autocomplete="off">
+                            <button type="submit" id="quickChatSendBtn" class="chat-send-btn">
+                                <span class="send-text">Send</span>
+                                <div class="spinner chat-spinner"></div>
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
 
