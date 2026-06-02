@@ -101,8 +101,24 @@ def setup_browser(p):
     # Hide navigator.webdriver property which Reddit checks
     context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     
-    # Intercept and block heavy resources (images, media, fonts, stylesheets) to optimize loading speed
-    context.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
+    # Intercept and block heavy resources (images, media, fonts, stylesheets) and tracking domains to optimize loading speed
+    def handle_route(route):
+        url = route.request.url.lower()
+        if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
+            return route.abort()
+        
+        blacklisted_keywords = [
+            "google-analytics", "googletagmanager", "googleadservices", "doubleclick",
+            "amazon-adsystem", "adnxs", "ads-twitter", "facebook.net", "facebook.com/tr",
+            "scorecardresearch", "quantserve", "hotjar", "optimizely", "crashlytics",
+            "sentry.io", "mixpanel", "amplitude", "branch.io"
+        ]
+        if any(kw in url for kw in blacklisted_keywords):
+            return route.abort()
+        
+        return route.continue_()
+
+    context.route("**/*", handle_route)
 
     if REDDIT_SESSION_COOKIE:
         context.add_cookies([{
@@ -118,7 +134,7 @@ def _goto_with_challenge_wait(page, url, timeout=30000):
     """Navigate and wait for Reddit's JS challenge to auto-resolve."""
     for attempt in range(3):
         try:
-            page.goto(url, wait_until="load", timeout=timeout)
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout)
             # If Reddit served a JS challenge, it will redirect; wait for it
             # Check if we're still on a challenge page
             for _ in range(10):
@@ -280,9 +296,11 @@ def scrape_post_worker(post_tasks, subreddit, sort_by, depth_limits, output_dir)
                 if comment_count > 0:
                     try:
                         thread_page.wait_for_selector("shreddit-comment", timeout=5000)
-                        comment_els = thread_page.locator("shreddit-comment").all()
-                        for c_el in comment_els[:depth_limits[0]]:
+                        comment_count_on_page = thread_page.locator("shreddit-comment").count()
+                        limit = min(depth_limits[0], comment_count_on_page)
+                        for i in range(limit):
                             try:
+                                c_el = thread_page.locator("shreddit-comment").nth(i)
                                 c_score = c_el.get_attribute("score") or "0"
                                 c_text_loc = c_el.locator("div[slot='comment']")
                                 c_text = c_text_loc.first.inner_text() if c_text_loc.count() > 0 else ""
