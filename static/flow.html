@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reddit Sentiment RAG — System Flow</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ===================== RESET & ROOT ===================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #07090f;
+      --bg2:       #0d1117;
+      --bg3:       #111825;
+      --border:    rgba(99,179,237,0.12);
+      --accent:    #63b3ed;
+      --orange:    #f6822d;
+      --green:     #48bb78;
+      --purple:    #9f7aea;
+      --red:       #fc5c5c;
+      --yellow:    #f6c90e;
+      --text:      #e2e8f0;
+      --muted:     #718096;
+      --card:      rgba(255,255,255,0.035);
+      --glow-b:    rgba(99,179,237,0.15);
+      --glow-o:    rgba(246,130,45,0.15);
+      --glow-g:    rgba(72,187,120,0.15);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ===================== SLIDE SYSTEM ===================== */
+    .deck { width: 100%; }
+
+    .slide {
+      min-height: 100vh;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 4rem 2rem;
+      position: relative;
+      border-bottom: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .slide-inner {
+      width: 100%;
+      max-width: 1100px;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* ===================== BACKGROUNDS ===================== */
+    .slide::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .slide-cover::before {
+      background:
+        radial-gradient(ellipse 900px 500px at 20% 10%, rgba(99,179,237,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 700px 400px at 80% 90%, rgba(246,130,45,0.10) 0%, transparent 60%);
+    }
+    .slide-scrape::before {
+      background:
+        radial-gradient(ellipse 800px 400px at 10% 50%, rgba(246,130,45,0.09) 0%, transparent 60%),
+        radial-gradient(ellipse 500px 300px at 90% 20%, rgba(99,179,237,0.06) 0%, transparent 60%);
+    }
+    .slide-embed::before {
+      background:
+        radial-gradient(ellipse 900px 500px at 80% 30%, rgba(72,187,120,0.10) 0%, transparent 60%),
+        radial-gradient(ellipse 500px 300px at 15% 80%, rgba(159,122,234,0.07) 0%, transparent 60%);
+    }
+    .slide-retrieve::before {
+      background:
+        radial-gradient(ellipse 900px 500px at 15% 20%, rgba(159,122,234,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 600px 400px at 85% 80%, rgba(99,179,237,0.08) 0%, transparent 60%);
+    }
+    .slide-agents::before {
+      background:
+        radial-gradient(ellipse 900px 500px at 50% 10%, rgba(246,130,45,0.10) 0%, transparent 60%),
+        radial-gradient(ellipse 600px 400px at 20% 90%, rgba(72,187,120,0.08) 0%, transparent 60%);
+    }
+    .slide-example::before {
+      background:
+        radial-gradient(ellipse 900px 500px at 10% 30%, rgba(99,179,237,0.10) 0%, transparent 60%),
+        radial-gradient(ellipse 600px 400px at 90% 70%, rgba(246,130,45,0.08) 0%, transparent 60%);
+    }
+    .slide-api::before {
+      background:
+        radial-gradient(ellipse 900px 500px at 80% 10%, rgba(72,187,120,0.10) 0%, transparent 60%),
+        radial-gradient(ellipse 600px 400px at 10% 90%, rgba(99,179,237,0.08) 0%, transparent 60%);
+    }
+    .slide-llm::before {
+      background:
+        radial-gradient(ellipse 900px 500px at 20% 15%, rgba(159,122,234,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 600px 400px at 80% 85%, rgba(246,201,14,0.08) 0%, transparent 60%);
+    }
+
+    /* ===================== NAV ===================== */
+    .nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 1000;
+      background: rgba(7,9,15,0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-brand {
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .nav-pills {
+      display: flex;
+      gap: 0.25rem;
+      flex-wrap: wrap;
+    }
+
+    .nav-pill {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      text-decoration: none;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .nav-pill:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(99,179,237,0.08);
+    }
+
+    /* ===================== TYPOGRAPHY ===================== */
+    .slide-num {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+
+    .slide-num span { color: var(--accent); }
+
+    h1.title {
+      font-size: clamp(2.8rem, 6vw, 5rem);
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+    }
+
+    .grad-blue   { background: linear-gradient(135deg, #63b3ed, #90cdf4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .grad-orange { background: linear-gradient(135deg, #f6822d, #fbd38d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .grad-green  { background: linear-gradient(135deg, #48bb78, #9ae6b4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .grad-purple { background: linear-gradient(135deg, #9f7aea, #d6bcfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .grad-multi  { background: linear-gradient(135deg, #63b3ed 0%, #f6822d 50%, #48bb78 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+    h2.section-title {
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-size: 1.1rem;
+      color: var(--muted);
+      margin-bottom: 2.5rem;
+      max-width: 680px;
+    }
+
+    /* ===================== CARDS ===================== */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .card:hover { border-color: rgba(99,179,237,0.3); transform: translateY(-2px); }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-top: 2rem;
+    }
+
+    .card-icon {
+      font-size: 2rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .card-body {
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    /* ===================== FLOW ARROWS ===================== */
+    .flow-row {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      flex-wrap: wrap;
+      margin: 2rem 0;
+    }
+
+    .flow-box {
+      flex: 1;
+      min-width: 140px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.2rem 1rem;
+      text-align: center;
+      position: relative;
+    }
+
+    .flow-box .fb-icon { font-size: 1.6rem; }
+    .flow-box .fb-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin-top: 0.4rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .flow-box .fb-sub {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+
+    .flow-arrow {
+      display: flex;
+      align-items: center;
+      padding: 0 0.4rem;
+      color: var(--muted);
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    /* ===================== CODE BLOCK ===================== */
+    .code-block {
+      background: #0d1117;
+      border: 1px solid rgba(99,179,237,0.15);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      line-height: 1.75;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .t-blue   { color: #63b3ed; }
+    .t-orange { color: #f6822d; }
+    .t-green  { color: #48bb78; }
+    .t-purple { color: #9f7aea; }
+    .t-yellow { color: #f6c90e; }
+    .t-red    { color: #fc5c5c; }
+    .t-muted  { color: #4a5568; }
+    .t-white  { color: #e2e8f0; }
+
+    /* ===================== TAGS ===================== */
+    .tag {
+      display: inline-block;
+      padding: 0.2rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .tag-blue   { background: rgba(99,179,237,0.12);  color: var(--accent);  border: 1px solid rgba(99,179,237,0.25); }
+    .tag-orange { background: rgba(246,130,45,0.12);  color: var(--orange);  border: 1px solid rgba(246,130,45,0.25); }
+    .tag-green  { background: rgba(72,187,120,0.12);  color: var(--green);   border: 1px solid rgba(72,187,120,0.25); }
+    .tag-purple { background: rgba(159,122,234,0.12); color: var(--purple);  border: 1px solid rgba(159,122,234,0.25); }
+    .tag-red    { background: rgba(252,92,92,0.12);   color: var(--red);     border: 1px solid rgba(252,92,92,0.25); }
+    .tag-yellow { background: rgba(246,201,14,0.12);  color: var(--yellow);  border: 1px solid rgba(246,201,14,0.25); }
+
+    /* ===================== PIPELINE STEPS ===================== */
+    .pipeline {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .pipe-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 1.25rem;
+      padding: 1.25rem 1.5rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      position: relative;
+      transition: border-color 0.2s;
+    }
+    .pipe-step:hover { border-color: rgba(99,179,237,0.3); }
+
+    .pipe-num {
+      font-size: 0.7rem;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .pipe-content { flex: 1; }
+    .pipe-title {
+      font-weight: 700;
+      font-size: 1rem;
+      margin-bottom: 0.3rem;
+    }
+    .pipe-desc {
+      font-size: 0.86rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .pipe-tags { margin-top: 0.6rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+    /* ===================== AGENT CARDS ===================== */
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem;
+      margin-top: 2rem;
+    }
+
+    .agent-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      transition: transform 0.2s, border-color 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .agent-card:hover { transform: translateY(-3px); }
+    .agent-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      border-radius: 16px 16px 0 0;
+    }
+    .agent-blue::before   { background: linear-gradient(90deg, var(--accent), #90cdf4); }
+    .agent-orange::before { background: linear-gradient(90deg, var(--orange), #fbd38d); }
+    .agent-purple::before { background: linear-gradient(90deg, var(--purple), #d6bcfa); }
+    .agent-green::before  { background: linear-gradient(90deg, var(--green),  #9ae6b4); }
+    .agent-red::before    { background: linear-gradient(90deg, var(--red),    #feb2b2); }
+
+    .agent-num {
+      font-size: 0.68rem;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: 0.12em;
+    }
+    .agent-name { font-size: 1.05rem; font-weight: 700; }
+    .agent-role { font-size: 0.78rem; color: var(--muted); }
+    .agent-desc { font-size: 0.83rem; color: var(--muted); line-height: 1.6; }
+    .agent-io {
+      font-size: 0.77rem;
+      font-family: 'JetBrains Mono', monospace;
+      background: rgba(0,0,0,0.3);
+      border-radius: 8px;
+      padding: 0.65rem 0.85rem;
+      line-height: 1.75;
+    }
+
+    /* ===================== API TABLE ===================== */
+    .api-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 0.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .api-table thead th {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 0.5rem 1rem;
+      text-align: left;
+    }
+
+    .api-table tbody tr {
+      background: var(--card);
+      border: 1px solid var(--border);
+      transition: background 0.2s;
+    }
+    .api-table tbody tr:hover { background: rgba(255,255,255,0.06); }
+
+    .api-table tbody td {
+      padding: 0.9rem 1rem;
+      font-size: 0.85rem;
+      vertical-align: middle;
+    }
+
+    .api-table tbody td:first-child { border-radius: 10px 0 0 10px; }
+    .api-table tbody td:last-child  { border-radius: 0 10px 10px 0; }
+
+    .method-badge {
+      font-size: 0.68rem;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+    }
+    .m-get  { background: rgba(72,187,120,0.15);  color: var(--green); }
+    .m-post { background: rgba(99,179,237,0.15);  color: var(--accent); }
+
+    .endpoint-path {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--text);
+    }
+
+    .endpoint-desc { color: var(--muted); font-size: 0.83rem; }
+
+    /* ===================== EXAMPLE SECTION ===================== */
+    .example-query {
+      background: linear-gradient(135deg, rgba(99,179,237,0.08), rgba(246,130,45,0.05));
+      border: 1px solid rgba(99,179,237,0.25);
+      border-radius: 16px;
+      padding: 1.5rem 2rem;
+      margin-bottom: 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .eq-icon { font-size: 2rem; }
+    .eq-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 0.2rem; }
+    .eq-text  { font-size: 1.25rem; font-weight: 700; }
+
+    .trace-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .trace-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .ts-badge {
+      font-size: 0.65rem;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .ts-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .ts-desc  { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
+
+    /* ===================== DIVIDER ===================== */
+    .divider {
+      width: 60px;
+      height: 3px;
+      border-radius: 3px;
+      margin: 1rem 0 1.5rem;
+    }
+    .div-blue   { background: var(--accent); }
+    .div-orange { background: var(--orange); }
+    .div-green  { background: var(--green); }
+    .div-purple { background: var(--purple); }
+
+    /* ===================== TWO-COL ===================== */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+
+    @media (max-width: 800px) {
+      .two-col { grid-template-columns: 1fr; }
+      .flow-row { flex-direction: column; }
+      .flow-arrow { transform: rotate(90deg); }
+    }
+
+    /* ===================== SECTION LABEL ===================== */
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-bottom: 1rem;
+    }
+    .sl-blue   { background: rgba(99,179,237,0.12);  color: var(--accent);  border: 1px solid rgba(99,179,237,0.25); }
+    .sl-orange { background: rgba(246,130,45,0.12);  color: var(--orange);  border: 1px solid rgba(246,130,45,0.25); }
+    .sl-green  { background: rgba(72,187,120,0.12);  color: var(--green);   border: 1px solid rgba(72,187,120,0.25); }
+    .sl-purple { background: rgba(159,122,234,0.12); color: var(--purple);  border: 1px solid rgba(159,122,234,0.25); }
+
+    /* ===================== HIGHLIGHT BOX ===================== */
+    .highlight-box {
+      background: rgba(99,179,237,0.06);
+      border: 1px solid rgba(99,179,237,0.2);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      font-size: 0.86rem;
+      color: var(--muted);
+      line-height: 1.7;
+      margin-top: 1rem;
+    }
+    .highlight-box strong { color: var(--accent); }
+
+    /* ===================== COVER EXTRA ===================== */
+    .cover-meta {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+      margin-top: 2.5rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+    }
+    .cm-item { }
+    .cm-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.3rem; }
+    .cm-value { font-size: 0.95rem; font-weight: 600; color: var(--text); }
+
+    /* ===================== STEP CONNECTOR ===================== */
+    .step-connector {
+      display: flex;
+      justify-content: center;
+      margin: -0.25rem 0;
+      color: var(--muted);
+      font-size: 1.2rem;
+    }
+
+    /* Body padding for fixed nav */
+    .deck { padding-top: 52px; }
+  </style>
+</head>
+<body>
+
+<!-- ============================== NAVIGATION ============================== -->
+<nav class="nav">
+  <div class="nav-brand">⬡ Reddit Sentiment RAG</div>
+  <div class="nav-pills">
+    <a class="nav-pill" href="#cover">Overview</a>
+    <a class="nav-pill" href="#scraping">Scraping</a>
+    <a class="nav-pill" href="#embedding">Embedding</a>
+    <a class="nav-pill" href="#retrieval">Retrieval</a>
+    <a class="nav-pill" href="#agents">Agents</a>
+    <a class="nav-pill" href="#example">Live Example</a>
+    <a class="nav-pill" href="#api">API Reference</a>
+    <a class="nav-pill" href="#llm-calls">LLM Calls</a>
+  </div>
+</nav>
+
+<div class="deck">
+
+  <!-- ==================== SLIDE 1: COVER ==================== -->
+  <section class="slide slide-cover" id="cover">
+    <div class="slide-inner">
+      <div class="slide-num"><span>01</span> / 08 — System Overview</div>
+      <h1 class="title">
+        <span class="grad-blue">Reddit Sentiment</span><br />
+        <span class="grad-orange">RAG Pipeline</span>
+      </h1>
+      <p class="subtitle">
+        A multi-stage, multi-agent intelligence system that scrapes Reddit, embeds content into a hybrid vector+keyword store, and runs a 4-agent LangGraph pipeline to produce structured sentiment reports.
+      </p>
+
+      <!-- Top-level flow -->
+      <div class="flow-row">
+        <div class="flow-box" style="border-color: rgba(246,130,45,0.35);">
+          <div class="fb-icon">🌐</div>
+          <div class="fb-label" style="color:var(--orange);">Scraper</div>
+          <div class="fb-sub">Reddit Public API</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box" style="border-color: rgba(72,187,120,0.35);">
+          <div class="fb-icon">🧬</div>
+          <div class="fb-label" style="color:var(--green);">Embedder</div>
+          <div class="fb-sub">ChromaDB + SQLite FTS5</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box" style="border-color: rgba(159,122,234,0.35);">
+          <div class="fb-icon">🔍</div>
+          <div class="fb-label" style="color:var(--purple);">Retriever</div>
+          <div class="fb-sub">Hybrid Agentic RAG</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box" style="border-color: rgba(99,179,237,0.35);">
+          <div class="fb-icon">🤖</div>
+          <div class="fb-label" style="color:var(--accent);">4 Agents</div>
+          <div class="fb-sub">LangGraph Orchestration</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box" style="border-color: rgba(246,201,14,0.35);">
+          <div class="fb-icon">📊</div>
+          <div class="fb-label" style="color:var(--yellow);">Report</div>
+          <div class="fb-sub">Structured JSON + UI</div>
+        </div>
+      </div>
+
+      <div class="cover-meta">
+        <div class="cm-item">
+          <div class="cm-label">Orchestration</div>
+          <div class="cm-value">LangGraph</div>
+        </div>
+        <div class="cm-item">
+          <div class="cm-label">Vector DB</div>
+          <div class="cm-value">ChromaDB (cosine)</div>
+        </div>
+        <div class="cm-item">
+          <div class="cm-label">Keyword Search</div>
+          <div class="cm-value">SQLite FTS5</div>
+        </div>
+        <div class="cm-item">
+          <div class="cm-label">Embedding Model</div>
+          <div class="cm-value">SentenceTransformer</div>
+        </div>
+        <div class="cm-item">
+          <div class="cm-label">Reranker</div>
+          <div class="cm-value">CrossEncoder ms-marco</div>
+        </div>
+        <div class="cm-item">
+          <div class="cm-label">API Framework</div>
+          <div class="cm-value">FastAPI + SSE</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SLIDE 2: SCRAPING ==================== -->
+  <section class="slide slide-scrape" id="scraping">
+    <div class="slide-inner">
+      <div class="slide-num"><span>02</span> / 07 — Phase 1</div>
+      <div class="section-label sl-orange">🌐 Data Ingestion</div>
+      <h2 class="section-title"><span class="grad-orange">Reddit Scraping</span></h2>
+      <div class="divider div-orange"></div>
+      <p class="subtitle">
+        The scraper hits Reddit's public JSON API — no official API key required. Posts and comment trees are saved as structured JSON files for later embedding.
+      </p>
+
+      <div class="two-col">
+        <div>
+          <div class="pipeline">
+            <div class="pipe-step">
+              <div class="pipe-num" style="background:rgba(246,130,45,0.15); color:var(--orange);">01</div>
+              <div class="pipe-content">
+                <div class="pipe-title">Validate Subreddit</div>
+                <div class="pipe-desc">Hits <code style="color:var(--accent)">reddit.com/r/{sub}/about.json</code> to confirm the subreddit exists, is public, and returns its subscriber count + description.</div>
+                <div class="pipe-tags"><span class="tag tag-orange">POST /api/validate_subreddit</span></div>
+              </div>
+            </div>
+            <div class="step-connector">↓</div>
+            <div class="pipe-step">
+              <div class="pipe-num" style="background:rgba(246,130,45,0.15); color:var(--orange);">02</div>
+              <div class="pipe-content">
+                <div class="pipe-title">Fetch Post Listings</div>
+                <div class="pipe-desc">Fetches up to 250 posts using the listing endpoint with pagination (<code style="color:var(--accent)">after</code> cursor). Supports <strong>top / hot / new</strong> sort and time filter (day/week/month/year/all).</div>
+                <div class="pipe-tags"><span class="tag tag-blue">Reddit Listing API</span></div>
+              </div>
+            </div>
+            <div class="step-connector">↓</div>
+            <div class="pipe-step">
+              <div class="pipe-num" style="background:rgba(246,130,45,0.15); color:var(--orange);">03</div>
+              <div class="pipe-content">
+                <div class="pipe-title">Fetch Comment Trees</div>
+                <div class="pipe-desc">For each post, fetches the full thread JSON. Comments are recursively processed 3 levels deep with configurable per-depth limits (depth 0: 25, depth 1: 15, depth 2: 10). OP and MOD replies are tagged.</div>
+                <div class="pipe-tags"><span class="tag tag-blue">Thread API</span><span class="tag tag-orange">Recursive Tree</span></div>
+              </div>
+            </div>
+            <div class="step-connector">↓</div>
+            <div class="pipe-step">
+              <div class="pipe-num" style="background:rgba(246,130,45,0.15); color:var(--orange);">04</div>
+              <div class="pipe-content">
+                <div class="pipe-title">Save to JSON</div>
+                <div class="pipe-desc">Each post saved as <code style="color:var(--yellow)">{id}_{title}.json</code> containing a <code>meta</code> block (title, url, score, flair, date) and <code>content</code> block (post_body + comment array).</div>
+                <div class="pipe-tags"><span class="tag tag-green">data/{subreddit}/*.json</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card" style="margin-bottom:1.25rem;">
+            <div class="card-icon">🔒</div>
+            <div class="card-title">Rate Limiting & Proxy</div>
+            <div class="card-body">1 second sleep between thread requests. Optional WARP SOCKS5 proxy auto-detected on ports 40000, 1080, 8080, 9091 for IP rotation if Reddit rate-limits.</div>
+          </div>
+          <div class="card" style="margin-bottom:1.25rem;">
+            <div class="card-icon">📁</div>
+            <div class="card-title">Output Structure</div>
+            <div class="card-body">Each JSON file includes the post body, all comment text (score-filtered), and metadata such as flair, date, upvote score, and sort method.</div>
+          </div>
+          <div class="highlight-box">
+            <strong>Background Thread:</strong> The scraper runs in a <code>daemon=True</code> Python thread. The UI polls <code>/api/scrape/status</code> every second to show a live progress bar — the user never blocks.
+          </div>
+
+          <div class="code-block" style="margin-top:1.25rem;">
+<span class="t-muted"># Resulting JSON structure (per post)</span>
+<span class="t-blue">{</span>
+  <span class="t-green">"meta"</span>: <span class="t-blue">{</span>
+    <span class="t-green">"title"</span>: <span class="t-orange">"DualSense controller drift issues?"</span>,
+    <span class="t-green">"score"</span>: <span class="t-yellow">4821</span>,
+    <span class="t-green">"flair"</span>: <span class="t-orange">"Hardware"</span>,
+    <span class="t-green">"date"</span>:  <span class="t-orange">"2024-03-12"</span>
+  <span class="t-blue">}</span>,
+  <span class="t-green">"content"</span>: <span class="t-blue">{</span>
+    <span class="t-green">"post_body"</span>: <span class="t-orange">"..."</span>,
+    <span class="t-green">"comments"</span>: <span class="t-blue">[</span>
+      <span class="t-blue">{</span> <span class="t-green">"body"</span>: <span class="t-orange">"..."</span>, <span class="t-green">"score"</span>: <span class="t-yellow">312</span>, <span class="t-green">"replies"</span>: <span class="t-blue">[...]</span> <span class="t-blue">}</span>
+    <span class="t-blue">]</span>
+  <span class="t-blue">}</span>
+<span class="t-blue">}</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SLIDE 3: EMBEDDING ==================== -->
+  <section class="slide slide-embed" id="embedding">
+    <div class="slide-inner">
+      <div class="slide-num"><span>03</span> / 07 — Phase 2</div>
+      <div class="section-label sl-green">🧬 Knowledge Indexing</div>
+      <h2 class="section-title"><span class="grad-green">Chunking & Embedding</span></h2>
+      <div class="divider div-green"></div>
+      <p class="subtitle">
+        Each JSON file is parsed into individual embeddable chunks. Posts may be split by the text splitter. Comments are stored individually. Every chunk is indexed in both ChromaDB (vector) and SQLite FTS5 (keyword) simultaneously.
+      </p>
+
+      <div class="two-col">
+        <div class="pipeline">
+          <div class="pipe-step">
+            <div class="pipe-num" style="background:rgba(72,187,120,0.15); color:var(--green);">01</div>
+            <div class="pipe-content">
+              <div class="pipe-title">Load JSON Files</div>
+              <div class="pipe-desc">Manifest manager checks file hash — skips unchanged files on re-embed. Only new or modified posts are re-processed.</div>
+              <div class="pipe-tags"><span class="tag tag-green">ManifestManager</span></div>
+            </div>
+          </div>
+          <div class="step-connector">↓</div>
+          <div class="pipe-step">
+            <div class="pipe-num" style="background:rgba(72,187,120,0.15); color:var(--green);">02</div>
+            <div class="pipe-content">
+              <div class="pipe-title">Chunk Post Bodies</div>
+              <div class="pipe-desc">Posts ≤ 2000 chars → stored as a single document. Posts &gt; 2000 chars → split by <code style="color:var(--accent)">RecursiveCharacterTextSplitter</code> (chunk_size=1500, overlap=200). Each chunk carries the same <strong>post_id</strong> in metadata — this is the parent link.</div>
+              <div class="pipe-tags"><span class="tag tag-blue">type: post</span><span class="tag tag-blue">type: post_part_N</span></div>
+            </div>
+          </div>
+          <div class="step-connector">↓</div>
+          <div class="pipe-step">
+            <div class="pipe-num" style="background:rgba(72,187,120,0.15); color:var(--green);">03</div>
+            <div class="pipe-content">
+              <div class="pipe-title">Flatten Comments</div>
+              <div class="pipe-desc">Each comment is stored as a separate chunk. Reply comments include a <em>contextual prefix</em> — the first 200 chars of the parent comment — to preserve conversation context. All comment chunks share the parent <strong>post_id</strong>.</div>
+              <div class="pipe-tags"><span class="tag tag-orange">type: comment</span><span class="tag tag-orange">depth: 0/1/2</span></div>
+            </div>
+          </div>
+          <div class="step-connector">↓</div>
+          <div class="pipe-step">
+            <div class="pipe-num" style="background:rgba(72,187,120,0.15); color:var(--green);">04</div>
+            <div class="pipe-content">
+              <div class="pipe-title">Dual Index (Batch 100)</div>
+              <div class="pipe-desc">Each batch of 100 chunks is upserted into <strong>ChromaDB</strong> (SentenceTransformer dense vectors) AND <strong>SQLite FTS5</strong> (BM25-compatible full-text search) in the same loop pass. One write, two indexes.</div>
+              <div class="pipe-tags"><span class="tag tag-purple">ChromaDB cosine</span><span class="tag tag-green">SQLite FTS5</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card" style="margin-bottom:1.25rem; border-color: rgba(72,187,120,0.3);">
+            <div class="card-icon">🔗</div>
+            <div class="card-title">How Comments Link to Posts</div>
+            <div class="card-body">
+              Every chunk (post or comment) stores <code style="color:var(--accent)">post_id</code>, <code style="color:var(--accent)">post_title</code>, <code style="color:var(--accent)">post_url</code>, and <code style="color:var(--accent)">post_date</code> in its metadata.<br /><br />
+              This means when a comment chunk is retrieved, you always know which post it belonged to — the retriever returns both the comment text <em>and</em> the full post context via metadata.
+            </div>
+          </div>
+
+          <div class="code-block">
+<span class="t-muted"># Metadata on every chunk</span>
+<span class="t-blue">{</span>
+  <span class="t-green">"post_id"</span>:       <span class="t-orange">"abc123"</span>,   <span class="t-muted"># parent link</span>
+  <span class="t-green">"post_title"</span>:    <span class="t-orange">"DualSense..."</span>,
+  <span class="t-green">"post_url"</span>:      <span class="t-orange">"https://..."</span>,
+  <span class="t-green">"post_date"</span>:     <span class="t-orange">"2024-03-12"</span>,
+  <span class="t-green">"post_score"</span>:    <span class="t-yellow">4821</span>,
+  <span class="t-green">"comment_score"</span>: <span class="t-yellow">312</span>,
+  <span class="t-green">"depth"</span>:         <span class="t-yellow">0</span>,
+  <span class="t-green">"type"</span>:          <span class="t-orange">"comment"</span>,
+  <span class="t-green">"flair"</span>:         <span class="t-orange">"Hardware"</span>
+<span class="t-blue">}</span></div>
+
+          <div class="highlight-box" style="margin-top:1.25rem; border-color: rgba(246,201,14,0.2); background: rgba(246,201,14,0.05);">
+            <strong style="color:var(--yellow);">Score Filter:</strong> Comments with <code>score &lt; MIN_COMMENT_SCORE</code> (default 3) are <strong>excluded before embedding</strong>. Only meaningful, upvoted community responses are indexed.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SLIDE 4: RETRIEVAL ==================== -->
+  <section class="slide slide-retrieve" id="retrieval">
+    <div class="slide-inner">
+      <div class="slide-num"><span>04</span> / 07 — Phase 3</div>
+      <div class="section-label sl-purple">🔍 Hybrid Retrieval</div>
+      <h2 class="section-title"><span class="grad-purple">Agentic Retrieval Pipeline</span></h2>
+      <div class="divider div-purple"></div>
+      <p class="subtitle">
+        Every query goes through an LLM-powered router that decides the optimal retrieval strategy, generates query variants for multi-query expansion, fuses ranked results, and reranks with a cross-encoder.
+      </p>
+
+      <div class="pipeline">
+        <div class="pipe-step">
+          <div class="pipe-num" style="background:rgba(159,122,234,0.15); color:var(--purple);">01</div>
+          <div class="pipe-content">
+            <div class="pipe-title">LLM Strategy Router + Query Expansion</div>
+            <div class="pipe-desc">
+              A single LLM call (the Combined Router Prompt) simultaneously decides the retrieval strategy (<strong>SEMANTIC</strong> or <strong>HYBRID</strong>) and generates up to 3 query variants from the original query — all in one JSON response. This is the only extra LLM call added to the pipeline.
+            </div>
+            <div class="pipe-tags">
+              <span class="tag tag-purple">LLM Call (combined_router.txt)</span>
+              <span class="tag tag-blue">1 call → strategy + 3 variants</span>
+            </div>
+          </div>
+        </div>
+        <div class="step-connector">↓</div>
+        <div class="pipe-step">
+          <div class="pipe-num" style="background:rgba(159,122,234,0.15); color:var(--purple);">02</div>
+          <div class="pipe-content">
+            <div class="pipe-title">Parallel Vector Search (ChromaDB)</div>
+            <div class="pipe-desc">
+              The original query + 3 variants are issued in parallel via <code>ThreadPoolExecutor</code>. Each query fetches <code>n_results × 2</code> = 30 chunks from ChromaDB. Duplicates are removed by content hash. This gives broader semantic recall than a single query.
+            </div>
+            <div class="pipe-tags">
+              <span class="tag tag-green">4 parallel threads</span>
+              <span class="tag tag-purple">ChromaDB cosine similarity</span>
+              <span class="tag tag-blue">Up to 120 raw candidates</span>
+            </div>
+          </div>
+        </div>
+        <div class="step-connector">↓</div>
+        <div class="pipe-step" style="border-color:rgba(159,122,234,0.25);">
+          <div class="pipe-num" style="background:rgba(159,122,234,0.15); color:var(--purple);">03</div>
+          <div class="pipe-content">
+            <div class="pipe-title">Keyword Search — SQLite FTS5 (HYBRID only)</div>
+            <div class="pipe-desc">
+              If router chose HYBRID, the original query is run against SQLite FTS5 (<code>search_documents_fts</code>). This uses BM25-style term matching — catching exact keyword hits that semantic search may score low. Results are converted to LangChain <code>Document</code> objects.
+            </div>
+            <div class="pipe-tags">
+              <span class="tag tag-orange">HYBRID mode only</span>
+              <span class="tag tag-green">SQLite FTS5</span>
+              <span class="tag tag-blue">n_results × 4 candidates</span>
+            </div>
+          </div>
+        </div>
+        <div class="step-connector">↓</div>
+        <div class="pipe-step">
+          <div class="pipe-num" style="background:rgba(159,122,234,0.15); color:var(--purple);">04</div>
+          <div class="pipe-content">
+            <div class="pipe-title">Reciprocal Rank Fusion (RRF)</div>
+            <div class="pipe-desc">
+              Vector results and keyword results are merged using RRF (k=60). Each document earns score <code>1/(rank + k)</code> from each list. Final scores are summed — documents appearing in both lists score highest. This balances semantic and keyword relevance without needing score normalization.
+            </div>
+            <div class="pipe-tags">
+              <span class="tag tag-purple">RRF k=60</span>
+              <span class="tag tag-orange">Deduplication by content hash</span>
+            </div>
+          </div>
+        </div>
+        <div class="step-connector">↓</div>
+        <div class="pipe-step">
+          <div class="pipe-num" style="background:rgba(159,122,234,0.15); color:var(--purple);">05</div>
+          <div class="pipe-content">
+            <div class="pipe-title">Score Filter + CrossEncoder Rerank</div>
+            <div class="pipe-desc">
+              Chunks with <code>comment_score &lt; min_score</code> (default 3) are dropped. The remaining candidates are passed to <code>cross-encoder/ms-marco-MiniLM-L-6-v2</code> which scores each (query, chunk) pair directly. The top <strong>15 chunks</strong> by combined rerank score are returned to the agent.
+            </div>
+            <div class="pipe-tags">
+              <span class="tag tag-blue">CrossEncoder rerank</span>
+              <span class="tag tag-green">Top 15 chunks returned</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SLIDE 5: AGENTS ==================== -->
+  <section class="slide slide-agents" id="agents">
+    <div class="slide-inner">
+      <div class="slide-num"><span>05</span> / 07 — Phase 4</div>
+      <div class="section-label sl-blue">🤖 LangGraph Orchestration</div>
+      <h2 class="section-title"><span class="grad-blue">4-Agent Pipeline</span></h2>
+      <div class="divider div-blue"></div>
+      <p class="subtitle">
+        LangGraph manages a typed <code>SentimentState</code> that flows through 4 sequential agents. A conditional reflection loop corrects invalid outputs before a final Pydantic schema validation.
+      </p>
+
+      <div class="agent-grid">
+        <div class="agent-card agent-blue">
+          <div class="agent-num" style="color:var(--accent);">NODE 1</div>
+          <div class="agent-name">Retrieve Node</div>
+          <div class="agent-role">Query Rewriter + Hybrid Retriever</div>
+          <div class="agent-desc">
+            Checks analysis history for conversational context and rewrites the query using <code>rewriter.txt</code> if needed. Calls <code>hybrid_retrieve()</code> to fetch 15 top documents.
+          </div>
+          <div class="agent-io">
+            <span class="t-muted">IN  →</span> <span class="t-orange">query</span><br/>
+            <span class="t-muted">OUT →</span> <span class="t-green">retrieved_docs, formatted_context</span>
+          </div>
+          <div class="pipe-tags"><span class="tag tag-blue">rewriter.txt</span><span class="tag tag-purple">hybrid_retrieve()</span></div>
+        </div>
+
+        <div class="agent-card agent-orange">
+          <div class="agent-num" style="color:var(--orange);">NODE 2</div>
+          <div class="agent-name">Extractor Agent</div>
+          <div class="agent-role">Domain-Agnostic Fact Extraction</div>
+          <div class="agent-desc">
+            Reads the formatted context and separates factual signals into positive and negative categories. Outputs structured text for the next agent.
+          </div>
+          <div class="agent-io">
+            <span class="t-muted">IN  →</span> <span class="t-orange">formatted_context, query</span><br/>
+            <span class="t-muted">OUT →</span> <span class="t-green">extraction</span>
+          </div>
+          <div class="pipe-tags"><span class="tag tag-orange">extractor.txt</span></div>
+        </div>
+
+        <div class="agent-card agent-purple">
+          <div class="agent-num" style="color:var(--purple);">NODE 3</div>
+          <div class="agent-name">Sentiment Agent</div>
+          <div class="agent-role">Emotion Map · Controversy · Trajectory</div>
+          <div class="agent-desc">
+            Reads both the extraction and the raw context. Produces an emotion map (8 emotions), controversy score, sentiment trajectory (trending up/down), and dominant community reactions.
+          </div>
+          <div class="agent-io">
+            <span class="t-muted">IN  →</span> <span class="t-orange">extraction, context, query</span><br/>
+            <span class="t-muted">OUT →</span> <span class="t-green">sentiment_analysis</span>
+          </div>
+          <div class="pipe-tags"><span class="tag tag-purple">sentiment.txt</span></div>
+        </div>
+
+        <div class="agent-card agent-green">
+          <div class="agent-num" style="color:var(--green);">NODE 4</div>
+          <div class="agent-name">Synthesizer Agent</div>
+          <div class="agent-role">Full Report Generation + Pydantic Validation</div>
+          <div class="agent-desc">
+            Combines extraction + sentiment analysis into a full <code>UnifiedAnalysisReport</code> JSON. Custom validators check: distribution sums to 100, ≥2 themes, ≥3 quotes, ≥3 entities, ≥2 insights per team.
+          </div>
+          <div class="agent-io">
+            <span class="t-muted">IN  →</span> <span class="t-orange">extraction, sentiment_analysis</span><br/>
+            <span class="t-muted">OUT →</span> <span class="t-green">final_report (validated JSON)</span>
+          </div>
+          <div class="pipe-tags"><span class="tag tag-green">synthesizer.txt</span><span class="tag tag-red">Pydantic Schema</span></div>
+        </div>
+
+        <div class="agent-card agent-red" style="grid-column: span 2;">
+          <div class="agent-num" style="color:var(--red);">REFLECTION NODE</div>
+          <div class="agent-name">Reflect & Fix (Conditional)</div>
+          <div class="agent-role">Self-Correction Loop — max 2 retries</div>
+          <div class="agent-desc">
+            If Node 4 fails schema validation, the errors are passed to <code>reflection.txt</code> along with the raw output. The LLM corrects only the broken fields and re-emits valid JSON. This loops back into Node 4 for re-validation. If still failing after 2 retries, a fallback report is generated.
+          </div>
+          <div class="agent-io">
+            <span class="t-muted">IN  →</span> <span class="t-red">validation_errors, raw_synthesis_output</span><br/>
+            <span class="t-muted">OUT →</span> <span class="t-green">corrected JSON → re-enters synthesize node</span>
+          </div>
+          <div class="pipe-tags"><span class="tag tag-red">reflection.txt</span><span class="tag tag-orange">retry_count ≤ 2</span><span class="tag tag-blue">fallback on max retries</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SLIDE 6: WORKED EXAMPLE ==================== -->
+  <section class="slide slide-example" id="example">
+    <div class="slide-inner">
+      <div class="slide-num"><span>06</span> / 07 — Worked Example</div>
+      <div class="section-label sl-blue">💡 End-to-End Trace</div>
+      <h2 class="section-title"><span class="grad-blue">Query Walkthrough</span></h2>
+      <div class="divider div-blue"></div>
+
+      <div class="example-query">
+        <div class="eq-icon">🎮</div>
+        <div>
+          <div class="eq-label">User Query</div>
+          <div class="eq-text">"What do people think about the DualSense controller on r/PS5?"</div>
+        </div>
+      </div>
+
+      <div class="trace-steps">
+
+        <div class="trace-step">
+          <div class="ts-badge" style="background:rgba(246,130,45,0.15); color:var(--orange);">PHASE 1</div>
+          <div>
+            <div class="ts-title">Historical Context Check</div>
+            <div class="ts-desc">Node 1 checks the last 5 queries in SQLite analysis history. If you previously asked about "PS5 haptics", the query is rewritten via <code>rewriter.txt</code> to add context: <em>"User previously asked about PS5 haptics — now asking about DualSense controller sentiment on r/PS5."</em></div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="ts-badge" style="background:rgba(159,122,234,0.15); color:var(--purple);">PHASE 2</div>
+          <div>
+            <div class="ts-title">Router + Query Variants Generated</div>
+            <div class="ts-desc">
+              LLM router decides <strong>HYBRID</strong> (specific product name → needs both semantic understanding AND keyword matching). It returns 3 variants:
+              <br/>• "DualSense haptic feedback experience"
+              <br/>• "PS5 controller drift problems complaints"
+              <br/>• "PlayStation 5 thumbstick issues Reddit"
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="ts-badge" style="background:rgba(72,187,120,0.15); color:var(--green);">PHASE 3a</div>
+          <div>
+            <div class="ts-title">4-Thread Parallel Vector Search in ChromaDB</div>
+            <div class="ts-desc">4 queries run simultaneously in ChromaDB. Each fetches 30 chunks (cosine similarity). After dedup — ~90 unique chunks. These include post body chunks about DualSense AND comment chunks from those posts, all carrying <code>post_id</code> metadata for traceability.</div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="ts-badge" style="background:rgba(72,187,120,0.15); color:var(--green);">PHASE 3b</div>
+          <div>
+            <div class="ts-title">FTS5 Keyword Search (HYBRID path)</div>
+            <div class="ts-desc">Original query hits SQLite FTS5. "DualSense" is a specific proper noun — BM25 scores documents containing it very highly, returning chunks that may have scored low in semantic space. These are merged with the vector results using RRF k=60.</div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="ts-badge" style="background:rgba(159,122,234,0.15); color:var(--purple);">PHASE 3c</div>
+          <div>
+            <div class="ts-title">CrossEncoder Reranks → Top 15 Selected</div>
+            <div class="ts-desc">CrossEncoder scores each (query, chunk) pair. Comment chunks like <em>"My DualSense started drifting after 4 months, absolutely furious"</em> score higher than generic posts. Final top 15 cover both positive and negative angles, with their <code>post_id</code> intact.</div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="ts-badge" style="background:rgba(99,179,237,0.15); color:var(--accent);">PHASE 4</div>
+          <div>
+            <div class="ts-title">4 Agents Execute Sequentially</div>
+            <div class="ts-desc">
+              <strong style="color:var(--orange);">Extractor</strong> → pulls out: positive (haptics praised, adaptive triggers loved) and negative (drift issues after 3-4 months, charging port failures).<br/>
+              <strong style="color:var(--purple);">Sentiment Agent</strong> → emotion map: frustration 42%, excitement 28%, disappointment 18%, satisfaction 12%. Controversy score: 65/100.<br/>
+              <strong style="color:var(--green);">Synthesizer</strong> → assembles the full JSON report, validated by Pydantic schema.
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="ts-badge" style="background:rgba(246,201,14,0.15); color:var(--yellow);">OUTPUT</div>
+          <div>
+            <div class="ts-title">Structured Report Returned</div>
+            <div class="ts-desc">Final JSON includes: verdict (MIXED, confidence 0.72), net sentiment score (-14), executive summary, 2+ positive themes, 2+ negative themes, 3+ quotes each, emotion map, controversy score, 3 teams × 2 actionable insights, and 3+ key entities. Report cached to disk and streamed to the UI via SSE.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SLIDE 7: API REFERENCE ==================== -->
+  <section class="slide slide-api" id="api">
+    <div class="slide-inner">
+      <div class="slide-num"><span>07</span> / 07 — API Reference</div>
+      <div class="section-label sl-green">⚡ FastAPI Endpoints</div>
+      <h2 class="section-title"><span class="grad-green">All API Endpoints</span></h2>
+      <div class="divider div-green"></div>
+      <p class="subtitle">
+        All endpoints are served by FastAPI on <code style="color:var(--accent)">http://localhost:8000</code>. Interactive Swagger docs at <code style="color:var(--accent)">/docs</code>.
+      </p>
+
+      <!-- Dashboard -->
+      <div style="margin-bottom:0.5rem;">
+        <span class="tag tag-blue" style="font-size:0.7rem; margin-bottom:0.75rem; display:inline-block;">🖥️ Dashboard</span>
+      </div>
+      <table class="api-table">
+        <thead><tr>
+          <th>Method</th><th>Endpoint</th><th>Description</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/</span></td>
+            <td><span class="endpoint-desc">Serves the main React-style dashboard HTML (index.html)</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Stats & Collections -->
+      <div style="margin: 1.5rem 0 0.5rem;">
+        <span class="tag tag-blue" style="font-size:0.7rem; margin-bottom:0.75rem; display:inline-block;">📊 Stats & Collections</span>
+      </div>
+      <table class="api-table">
+        <thead><tr>
+          <th>Method</th><th>Endpoint</th><th>Description</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/stats</span></td>
+            <td><span class="endpoint-desc">ChromaDB collection stats — doc count, date range, flair distribution, avg score, API key status</span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/collections</span></td>
+            <td><span class="endpoint-desc">Lists all available subreddits (ChromaDB collections) and their document counts</span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/wordcloud</span></td>
+            <td><span class="endpoint-desc">Returns top 40 entity/keyword frequencies from 200 sampled docs, LLM-filtered to meaningful entities</span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/history</span></td>
+            <td><span class="endpoint-desc">Last 50 analysis runs from SQLite — query, mode, timestamp, sentiment verdict, confidence</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Scraping -->
+      <div style="margin: 1.5rem 0 0.5rem;">
+        <span class="tag tag-orange" style="font-size:0.7rem; margin-bottom:0.75rem; display:inline-block;">🌐 Scraping</span>
+      </div>
+      <table class="api-table">
+        <thead><tr>
+          <th>Method</th><th>Endpoint</th><th>Description</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="method-badge m-post">POST</span></td>
+            <td><span class="endpoint-path">/api/validate_subreddit</span></td>
+            <td><span class="endpoint-desc">Body: <code>{ subreddit }</code> — validates the subreddit exists &amp; returns metadata (subscribers, description)</span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-post">POST</span></td>
+            <td><span class="endpoint-path">/api/scrape</span></td>
+            <td><span class="endpoint-desc">Body: <code>{ subreddit, post_limit, sort_by, time_filter }</code> — starts background scrape thread, returns immediately</span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/scrape/status</span></td>
+            <td><span class="endpoint-desc">Returns <code>{ running, completed, total, progress, message, warnings }</code> — poll this for live progress</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Embedding -->
+      <div style="margin: 1.5rem 0 0.5rem;">
+        <span class="tag tag-green" style="font-size:0.7rem; margin-bottom:0.75rem; display:inline-block;">🧬 Embedding</span>
+      </div>
+      <table class="api-table">
+        <thead><tr>
+          <th>Method</th><th>Endpoint</th><th>Description</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="method-badge m-post">POST</span></td>
+            <td><span class="endpoint-path">/api/embed</span></td>
+            <td><span class="endpoint-desc">Body: <code>{ subreddit }</code> — starts background embedding into ChromaDB + SQLite FTS5. Uses manifest to skip unchanged files</span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/embed/status</span></td>
+            <td><span class="endpoint-desc">Returns <code>{ running, processed_docs, total_docs, progress, message }</code> — poll for live progress</span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/data/count</span></td>
+            <td><span class="endpoint-desc">Query param: <code>?subreddit=</code> — counts JSON files ready for embedding in <code>data/{subreddit}/</code></span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Analysis -->
+      <div style="margin: 1.5rem 0 0.5rem;">
+        <span class="tag tag-purple" style="font-size:0.7rem; margin-bottom:0.75rem; display:inline-block;">🤖 Analysis</span>
+      </div>
+      <table class="api-table">
+        <thead><tr>
+          <th>Method</th><th>Endpoint</th><th>Description</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="method-badge m-post">POST</span></td>
+            <td><span class="endpoint-path">/api/analyze</span></td>
+            <td><span class="endpoint-desc">Body: <code>{ query, mode, collection, strategy }</code> — creates background job, returns <code>{ job_id }</code>. Mode: "deep" (LangGraph) or "quick" (simple RAG)</span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/analyze/status/{job_id}</span></td>
+            <td><span class="endpoint-desc">Polls job state — returns <code>{ status, result }</code>. Status: pending → running → completed / failed</span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/analyze/stream/{job_id}</span></td>
+            <td><span class="endpoint-desc">Server-Sent Events stream — pushes agent progress messages in real-time as each node completes (used by UI live log)</span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/report/{report_id}</span></td>
+            <td><span class="endpoint-desc">Loads a cached full report JSON from <code>data/reports/{report_id}.json</code></span></td>
+          </tr>
+          <tr>
+            <td><span class="method-badge m-get">GET</span></td>
+            <td><span class="endpoint-path">/api/report/{report_id}/download</span></td>
+            <td><span class="endpoint-desc">Query param: <code>?format=html</code> or <code>?format=markdown</code> — downloads the report as a styled HTML page or Markdown file</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="highlight-box" style="margin-top:2rem;">
+        <strong>Async Job Pattern:</strong> All heavy operations (scrape, embed, analyze) follow the same pattern — <strong>POST</strong> to start, receive a <code>job_id</code>, then <strong>GET /status</strong> to poll or <strong>GET /stream</strong> for real-time SSE events. No blocking requests. The frontend polls every 500ms.
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ==================== SLIDE 8: LLM CALLS & MODELS ==================== -->
+  <section class="slide slide-llm" id="llm-calls">
+    <div class="slide-inner">
+      <div class="slide-num"><span>08</span> / 08 — LLM Intelligence</div>
+      <div class="section-label sl-purple">🤖 Model Usage</div>
+      <h2 class="section-title"><span class="grad-purple">LLM Calls &amp; Models</span></h2>
+      <div class="divider div-purple"></div>
+      <p class="subtitle">
+        Every LLM invocation in the system — what it does, which model it uses, and where it lives in the code. All calls route through <code style="color:var(--accent)">get_llm()</code> in <code style="color:var(--accent)">config.py</code>, which selects between <strong>Google AI Studio</strong> (Gemini) and <strong>OpenRouter</strong> based on the <code style="color:var(--yellow)">USE_GOOGLE_STUDIO</code> env flag.
+      </p>
+
+      <!-- Provider Toggle Info -->
+      <div class="highlight-box" style="margin-bottom:2rem;">
+        <strong>Current config: <code>USE_GOOGLE_STUDIO=true</code></strong> — all calls go to Google AI Studio (Gemini).<br/>
+        Three model tiers in use: <span style="color:var(--accent);"><strong>gemini-3.1-flash-lite</strong></span> for routing &amp; utility calls, 
+        <span style="color:var(--purple);"><strong>gemini-3-flash-preview</strong></span> for extraction &amp; reflection, 
+        and <span style="color:var(--purple); text-shadow:0 0 4px rgba(159,122,234,0.4)"><strong>gemini-3.5-flash</strong></span> for high-level sentiment reasoning & report synthesis.<br/>
+        On quota exhaustion (429) after 3 attempts, calls automatically fall back to <span style="color:var(--yellow);"><strong>gemma-4-31b-it</strong></span> on Google AI Studio.
+      </div>
+
+      <!-- LLM Calls Table -->
+      <table class="api-table">
+        <thead><tr>
+          <th>#</th><th>Call Site</th><th>Model</th><th>Temp</th><th>Purpose</th><th>Source</th>
+        </tr></thead>
+        <tbody>
+
+          <tr>
+            <td><span class="tag tag-purple" style="font-size:0.68rem;">01</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Query Intelligence Layer</span></td>
+            <td><span class="tag tag-blue">gemini-3.1-flash-lite</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">Consolidated single LLM call replacing Orchestrator, Retrieval Router, and Rewriter. Analyzes query intent, subreddit routing, retrieval strategy (SEMANTIC vs HYBRID), query variants, and query rewriting using conversation history. Outputs <code>{ route, subreddit, rationale, rewritten_query, retrieval_strategy, retrieval_reason, variants }</code> JSON.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">orchestrator.py:44</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-orange" style="font-size:0.68rem;">02</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Extractor Agent</span></td>
+            <td><span class="tag tag-purple">gemini-3-flash-preview</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">Node 2 of the LangGraph pipeline. Reads the retrieved Reddit context and extracts structured positive/negative facts and evidence signals.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">rag_agent.py:140</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-orange" style="font-size:0.68rem;">03</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Sentiment Analyst Agent</span></td>
+            <td><span class="tag tag-purple" style="background:var(--purple); color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.3)">gemini-3.5-flash</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.2</code></td>
+            <td><span class="endpoint-desc">Node 3 of the LangGraph pipeline. Produces the emotion map, controversy score, sentiment trajectory, and dominant emotional tone from the extractor's output.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">rag_agent.py:161</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-orange" style="font-size:0.68rem;">04</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Synthesizer Agent</span></td>
+            <td><span class="tag tag-purple" style="background:var(--purple); color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.3)">gemini-3.5-flash</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">Node 4 — the final report builder. Combines extractor + sentiment outputs into a full <code>UnifiedAnalysisReport</code> JSON with verdict, distribution, quotes, entities, and insights. Validated with Pydantic.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">rag_agent.py:186</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-red" style="font-size:0.68rem;">05</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Reflection / Self-Correction</span></td>
+            <td><span class="tag tag-purple">gemini-3-flash-preview</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">Conditional node — fires only when Pydantic/schema validation fails. Receives the error list and the broken JSON and attempts to self-correct. Retries up to 2 times before fallback.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">rag_agent.py:280</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-green" style="font-size:0.68rem;">06</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Quick Mode Generator</span></td>
+            <td><span class="tag tag-blue">gemini-3.1-flash-lite</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.3</code></td>
+            <td><span class="endpoint-desc">Single-shot LLM call used in <strong>Quick mode</strong> (skips the 4-agent pipeline). Reads retrieved docs and returns a conversational prose summary with SENTIMENT and CONFIDENCE metadata lines.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">generator.py:65</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-green" style="font-size:0.68rem;">07</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Word Cloud Topic Extractor</span></td>
+            <td><span class="tag tag-blue">gemini-3.1-flash-lite</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.2</code></td>
+            <td><span class="endpoint-desc">Dashboard utility call — samples up to 100 docs (~15k chars) and extracts 15–25 specific entities/topics for the word cloud widget. Falls back to word-frequency counting if LLM fails.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">app.py:189</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-blue" style="font-size:0.68rem;">08</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Scraper ReAct Agent</span></td>
+            <td><span class="tag tag-blue">gemini-3.1-flash-lite</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">LangGraph <code>create_react_agent</code> — decides when and how to call the <code>scrape_subreddit_tool</code> to fetch new Reddit data. Only invoked when the Orchestrator routes to <strong>"scraper"</strong>.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">scraper_agent.py:9</code></td>
+          </tr>
+
+          <tr>
+            <td><span class="tag tag-blue" style="font-size:0.68rem;">09</span></td>
+            <td><span style="font-weight:700; color:var(--text);">Processor ReAct Agent</span></td>
+            <td><span class="tag tag-blue">gemini-3.1-flash-lite</span></td>
+            <td><code class="t-yellow" style="font-family:'JetBrains Mono',monospace;">0.1</code></td>
+            <td><span class="endpoint-desc">LangGraph <code>create_react_agent</code> — decides when and how to call the <code>embed_data_tool</code> to ingest scraped data into ChromaDB. Only invoked in the <strong>scrape-then-analyze</strong> path.</span></td>
+            <td><code style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--muted);">processor_agent.py:9</code></td>
+          </tr>
+
+        </tbody>
+      </table>
+
+      <!-- Model Tier Summary -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.25rem; margin-top:2rem;">
+        <div class="card" style="border-color:rgba(99,179,237,0.3);">
+          <div class="card-icon">⚡</div>
+          <div class="card-title" style="color:var(--accent);">gemini-3.1-flash-lite — Routing Tier</div>
+          <div class="card-body">
+            Fast, lightweight model used for all <strong>routing, rewriting, and utility</strong> calls. Low latency, minimal cost.<br/><br/>
+            <strong>Env var:</strong> <code>GOOGLE_MODEL=gemini-3.1-flash-lite</code><br/><br/>
+            <span style="color:var(--muted);">Used by: Query Intelligence Layer · Quick Mode Generator · Word Cloud Extractor · Scraper ReAct Agent · Processor ReAct Agent</span>
+          </div>
+        </div>
+        <div class="card" style="border-color:rgba(159,122,234,0.3);">
+          <div class="card-icon">🧠</div>
+          <div class="card-title" style="color:var(--purple);">gemini-3-flash-preview &amp; 3.5-flash — Deep Analysis</div>
+          <div class="card-body">
+            More capable models reserved for the <strong>4-agent LangGraph pipeline</strong> where output quality and reasoning are critical.<br/><br/>
+            <strong>gemini-3.5-flash</strong> (<code>UPGRADED_ANALYSIS_MODEL</code>): Used by Sentiment Analyst and Synthesizer.<br/>
+            <strong>gemini-3-flash-preview</strong> (<code>DEEP_ANALYSIS_MODEL</code>): Used by Extractor and Reflection / Self-Correction.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+
+</body>
+</html>

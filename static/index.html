@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reddit Sentiment Intelligence</title>
+    <meta name="description" content="AI-powered multi-agent sentiment analysis for Reddit communities">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    
+    <!-- Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- CSS Style Sheets -->
+    <link rel="stylesheet" href="/static/styles.css">
+    
+    <!-- Chart.js and Markdown Support -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+
+<body>
+    <div class="bg-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-brand">
+                <div class="header-logo">📊</div>
+                <div>
+                    <h1>Sentiment Intelligence</h1>
+                    <div class="header-sub">Reddit community analysis dashboard</div>
+                </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:12px">
+                <a href="/static/ppt.html" target="_blank" class="btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.85rem">🎬 Tech Presentation</a>
+                <a href="/static/ppt2.html" target="_blank" class="btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.85rem">🎬 Flow Presentation</a>
+                <span class="badge" id="headerBadge">r/community</span>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="nav-tabs">
+            <button class="nav-tab active" id="rag-tab" onclick="switchTab('rag')">🤖 RAG Analysis</button>
+            <button class="nav-tab" id="compare-tab" onclick="switchTab('compare')">📊 Subreddit Comparison</button>
+        </nav>
+
+        <!-- API Warning -->
+        <div id="apiWarning" class="api-warning">
+            ⚠️ <strong>API Key Required</strong> — Set your <code id="missingKeyName">API_KEY</code> in the
+            <code>.env</code> file to enable analysis.
+            Get a key from <a id="keyLink" href="#" target="_blank" style="color:var(--accent-amber)">the provider</a>.
+        </div>
+
+        <!-- ─────────────────── TAB 1: RAG ANALYSIS ─────────────────── -->
+        <div id="rag-content" class="tab-content active">
+            <!-- Stepper -->
+            <nav class="stepper">
+                <div class="step-item active" id="stepItem1" onclick="goToStep(1)">
+                    <div class="step-circle">1</div>
+                    <div class="step-label">Scrape</div>
+                </div>
+                <div class="step-item" id="stepItem2" onclick="goToStep(2)">
+                    <div class="step-circle">2</div>
+                    <div class="step-label">Embed</div>
+                </div>
+                <div class="step-item" id="stepItem3" onclick="goToStep(3)">
+                    <div class="step-circle">3</div>
+                    <div class="step-label">Analyze</div>
+                </div>
+            </nav>
+
+            <!-- Step 1: Scrape -->
+            <div id="panel1" class="panel active card">
+                <div class="section-title"><span class="icon">🕷️</span> Step 1: Reddit Data Collection</div>
+                <p style="color:var(--text-secondary);margin-bottom:24px;font-size:0.9rem">Configure which community and how
+                    many posts you want to analyze.</p>
+
+                <!-- Select existing DB -->
+                <div id="existingDbSection" style="margin-bottom:24px; display:none;">
+                    <div class="form-group">
+                        <label>Use Existing Knowledge Base</label>
+                        <div style="display:flex;gap:12px">
+                            <select id="existingDbSelect" class="form-select" style="flex:1">
+                                <option value="">-- Select a Subreddit --</option>
+                            </select>
+                            <button class="btn-secondary" onclick="useExistingDb()">Load DB</button>
+                        </div>
+                    </div>
+                    <div style="margin:20px 0;text-align:center;color:var(--text-secondary);font-size:0.85rem">
+                        — OR SCRAPE NEW —
+                    </div>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Subreddit</label>
+                        <input type="text" id="scrapeSubreddit" class="form-input" value=""
+                            placeholder="e.g. machinelearning">
+                    </div>
+                    <div class="form-group">
+                        <label>Post Limit</label>
+                        <input type="number" id="scrapeLimit" class="form-input" value="25" min="1" max="250">
+                    </div>
+                    <div class="form-group">
+                        <label>Sort By</label>
+                        <select id="scrapeSort" class="form-select">
+                            <option value="best">Best</option>
+                            <option value="top">Top</option>
+                            <option value="hot">Hot</option>
+                            <option value="new">New</option>
+                            <option value="relevance">Relevance</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Time Filter</label>
+                        <select id="scrapeTime" class="form-select">
+                            <option value="year">Past Year</option>
+                            <option value="month">Past Month</option>
+                            <option value="week">Past Week</option>
+                            <option value="day">Past 24h</option>
+                            <option value="all">All Time</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="subredditConfirmation" class="card" style="display:none;margin-top:20px;background:var(--accent-orange-dim);border:1px solid var(--accent-orange-border)">
+                    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+                        <div>
+                            <h3 id="confSubName" style="font-size:1.1rem;margin-bottom:4px">r/Subreddit</h3>
+                            <p id="confSubTitle" style="font-size:0.9rem;color:var(--text-secondary)">Subreddit Title</p>
+                        </div>
+                        <div style="text-align:right">
+                            <div id="confSubCount" style="font-weight:700;color:var(--accent-steel)">0</div>
+                            <div style="font-size:0.75rem;color:var(--text-secondary)">subscribers</div>
+                        </div>
+                    </div>
+                    <p id="confSubDesc" style="font-size:0.85rem;line-height:1.5;margin-bottom:16px;color:var(--text-secondary)">Description goes here...</p>
+                    <div style="display:flex;gap:12px;justify-content:flex-end">
+                        <button class="btn-secondary" style="padding:8px 16px;font-size:0.85rem" onclick="cancelScrape()">Cancel</button>
+                        <button class="search-btn" style="padding:8px 24px;font-size:0.85rem" onclick="confirmAndScrape()">Confirm & Scrape</button>
+                    </div>
+                </div>
+
+                <div id="scrapeProgress" class="progress-container" style="display:none">
+                    <div class="progress-stats">
+                        <span id="scrapeStatusText">Initializing...</span>
+                        <span id="scrapePercentText">0%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div id="scrapeBarFill" class="progress-bar-fill"></div>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:8px" id="scrapeDetailText">
+                        Waiting for Reddit API...
+                    </div>
+                </div>
+
+                <div class="panel-actions">
+                    <button class="btn-skip" onclick="goToStep(3)">Skip to Analysis</button>
+                    <button id="startScrapeBtn" class="search-btn" onclick="startScraping()">
+                        <span class="btn-text">Start Scraping</span>
+                        <div class="spinner"></div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Embed -->
+            <div id="panel2" class="panel card">
+                <div class="section-title"><span class="icon">🏗️</span> Step 2: Knowledge Base Construction</div>
+                <p style="color:var(--text-secondary);margin-bottom:24px;font-size:0.9rem">Convert scraped Reddit data into
+                    vector embeddings for semantic search.</p>
+
+                <div class="card" style="background:rgba(255,255,255,0.02);margin-bottom:24px">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <div>
+                            <div style="font-size:1.2rem;font-weight:700" id="jsonFileCount">0</div>
+                            <div style="font-size:0.8rem;color:var(--text-secondary)">JSON files ready to embed</div>
+                        </div>
+                        <div class="stat-icon" style="font-size:2rem">📂</div>
+                    </div>
+                </div>
+
+                <div id="embedProgress" class="progress-container" style="display:none">
+                    <div class="progress-stats">
+                        <span id="embedStatusText">Embedding...</span>
+                        <span id="embedPercentText">0%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div id="embedBarFill" class="progress-bar-fill"></div>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:8px" id="embedDetailText">
+                        Processing documents...
+                    </div>
+                </div>
+
+                <div class="panel-actions">
+                    <button class="btn-secondary" onclick="goToStep(1)">Back</button>
+                    <button id="startEmbedBtn" class="search-btn" onclick="startEmbedding()">
+                        <span class="btn-text">Start Embedding</span>
+                        <div class="spinner"></div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 3: Analyze -->
+            <div id="panel3" class="panel">
+                <!-- Stats -->
+                <div class="stats-grid" id="statsGrid">
+                    <div class="card stat-card">
+                        <div class="stat-icon">📄</div>
+                        <div class="stat-value" id="statDocs">—</div>
+                        <div class="stat-label">Documents Indexed</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-icon">📅</div>
+                        <div class="stat-value" id="statDate">—</div>
+                        <div class="stat-label">Date Range</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-icon">⬆️</div>
+                        <div class="stat-value" id="statScore">—</div>
+                        <div class="stat-label">Avg Score</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-icon">🏷️</div>
+                        <div class="stat-value" id="statFlairs">—</div>
+                        <div class="stat-label">Flair Types</div>
+                    </div>
+                </div>
+
+                <!-- Word Cloud -->
+                <div class="card" id="wordcloudSection" style="margin-bottom: 32px; display: none;">
+                    <div class="section-title"><span class="icon">☁️</span> Topic Inspiration</div>
+                    <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:16px;">Key terms found in the current dataset to inspire your query (click one to run):</p>
+                    <div id="wordcloudContainer" style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:center;min-height:100px;">
+                        <!-- Words injected here -->
+                    </div>
+                </div>
+
+                <!-- Query Section -->
+                <div class="search-section card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                        <div style="font-size:0.85rem; font-weight:600; color:var(--text-secondary);">Retrieval Strategy</div>
+                        <div class="strategy-toggle" style="display:flex; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;">
+                            <button class="mode-btn active" data-strategy="agentic" onclick="setStrategy('agentic')" style="padding:4px 10px;font-size:0.75rem">🤖 Agentic</button>
+                            <button class="mode-btn" data-strategy="semantic" onclick="setStrategy('semantic')" style="padding:4px 10px;font-size:0.75rem">🔍 Semantic</button>
+                            <button class="mode-btn" data-strategy="hybrid" onclick="setStrategy('hybrid')" style="padding:4px 10px;font-size:0.75rem">🔀 Hybrid</button>
+                        </div>
+                    </div>
+                    <div class="search-box">
+                        <input type="text" id="searchInput" class="search-input"
+                            placeholder="What do fans think about the manager's tactics?" />
+                        <div class="mode-toggle">
+                            <button class="mode-btn" data-mode="quick" onclick="setMode('quick')">⚡ Quick</button>
+                            <button class="mode-btn active" data-mode="deep" onclick="setMode('deep')">🧠 Deep</button>
+                        </div>
+                        <button id="searchBtn" class="search-btn" onclick="runAnalysis()">
+                            <span class="btn-text">Analyze</span>
+                            <div class="spinner"></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error -->
+            <div id="errorMsg" class="error-msg"></div>
+
+            <div id="analysisResultsWrapper" style="display:none;">
+            <!-- Loading skeleton -->
+            <div id="loadingSkeleton" class="card" style="display:none;margin-bottom:32px">
+                <div id="analysisStatusText" style="font-weight:bold; color:var(--accent-orange); margin-bottom:16px;">Starting analysis...</div>
+                
+                <!-- Real-time Console Log Box -->
+                <div id="analysisConsole" class="console-box">
+                    <div style="color:var(--text-muted)">[SYSTEM] Initializing console stream...</div>
+                </div>
+
+                <div class="skeleton h-lg"></div>
+                <div class="skeleton h-md"></div>
+                <div class="skeleton h-sm"></div>
+                <div class="skeleton h-sm"></div>
+                <div class="skeleton h-md" style="margin-top:24px"></div>
+                <div class="skeleton h-sm"></div>
+                <div class="skeleton h-sm"></div>
+            </div>
+
+            <!-- Quick Mode: Conversational Chat Interface -->
+            <div id="quickResult" style="display:none;margin-bottom:16px">
+                <div class="quick-chat-card card">
+                    <div class="chat-header">
+                        <div class="chat-header-brand">
+                            <span class="chat-status-dot"></span>
+                            <span id="quickModeBadge" style="font-size:0.75rem;padding:3px 10px;border-radius:4px;background:var(--accent-orange-dim);color:var(--accent-orange);font-weight:700;letter-spacing:0.8px">⚡ QUICK CHAT</span>
+                            <span id="quickStrategyBadge" style="font-size:0.75rem;padding:3px 10px;border-radius:4px;background:var(--accent-steel-dim);color:var(--accent-steel);font-weight:700;letter-spacing:0.5px"></span>
+                        </div>
+                        <button class="btn-clear-chat" id="quickChatClearBtn" onclick="clearQuickChat()">🧹 Clear Chat</button>
+                    </div>
+
+                    <div class="chat-body">
+                        <!-- Welcome empty state -->
+                        <div id="quickChatWelcome" class="chat-welcome">
+                            <div class="welcome-icon">💬</div>
+                            <h3>Conversational RAG Chat</h3>
+                            <p>Ask questions about the collected Reddit posts & comments. Every query uses the fallback model and retrieves relevant context from the active collection.</p>
+                        </div>
+                        
+                        <!-- Messages list -->
+                        <div id="quickChatHistory" class="chat-history-container" style="display:none;"></div>
+                    </div>
+
+                    <div class="chat-footer">
+                        <form id="quickChatForm" onsubmit="sendQuickChatMessage(event)" class="chat-input-form">
+                            <input type="text" id="quickChatInput" class="chat-input" placeholder="Ask a question about the collection data..." autocomplete="off">
+                            <button type="submit" id="quickChatSendBtn" class="chat-send-btn">
+                                <span class="send-text">Send</span>
+                                <div class="spinner chat-spinner"></div>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results: Unified Deep Report -->
+            <div id="unifiedResults" class="results-section">
+
+                <!-- ① Verdict Hero -->
+                <div class="card" style="margin-bottom:16px">
+                    <div class="gauge-container">
+                        <div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px">
+                            <div id="sentimentBadge" class="sentiment-badge neutral">—</div>
+                            <div id="netScoreBadge" class="net-score-badge zero"></div>
+                            <span id="modeBadgeLabel" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;background:var(--accent-orange-dim);color:var(--accent-orange);font-weight:700;letter-spacing:0.8px"></span>
+                            <span id="strategyBadgeLabel" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;background:var(--accent-steel-dim);color:var(--accent-steel);font-weight:700;letter-spacing:0.5px"></span>
+                            <span id="consensusBadge" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;font-weight:700;letter-spacing:0.5px;display:none"></span>
+                        </div>
+                        <div id="oneLinerText" style="font-size:1.1rem;font-weight:600;color:var(--text-primary);margin:10px 0 4px"></div>
+                        <div class="gauge-confidence" id="confidenceText"></div>
+                    </div>
+                    <div class="summary-text" id="summaryText"></div>
+                </div>
+
+                <!-- ② Positive & Negative Signal Cards -->
+                <div class="signal-grid">
+                    <!-- Positive -->
+                    <div class="signal-card positive">
+                        <div class="signal-card-title">✅ Positive Signals</div>
+                        <div class="signal-pct" id="posPct">0%</div>
+                        <div class="signal-headline" id="posHeadline"></div>
+                        <div id="posThemes"></div>
+                        <div class="section-title" style="margin:14px 0 8px;font-size:0.8rem"><span class="icon">💬</span> Praise Quotes</div>
+                        <div id="posQuotes"></div>
+                    </div>
+                    <!-- Negative -->
+                    <div class="signal-card negative">
+                        <div class="signal-card-title">⚠️ Negative Signals</div>
+                        <div class="signal-pct" id="negPct">0%</div>
+                        <div class="signal-headline" id="negHeadline"></div>
+                        <div id="negThemes"></div>
+                        <div class="section-title" style="margin:14px 0 8px;font-size:0.8rem"><span class="icon">💬</span> Criticism Quotes</div>
+                        <div id="negQuotes"></div>
+                    </div>
+                </div>
+
+                <!-- ③ Sentiment Distribution & Emotion Map -->
+                <div class="results-grid" style="margin-top:16px">
+                    <div class="card">
+                        <div class="section-title"><span class="icon">📊</span> Sentiment Distribution</div>
+                        
+                        <!-- Chart.js Doughnut -->
+                        <div class="chart-wrapper">
+                            <canvas id="sentimentChart"></canvas>
+                        </div>
+
+                        <!-- Fallback values for text descriptors -->
+                        <div class="breakdown-bar" style="display:none">
+                            <div id="barPositive" class="bar-positive" style="width:0%"></div>
+                            <div id="barNegative" class="bar-negative" style="width:0%"></div>
+                            <div id="barNeutral" class="bar-neutral" style="width:0%"></div>
+                        </div>
+                        <div class="breakdown-labels" style="justify-content: space-around; margin-top: 10px;">
+                            <span>🟢 Positive: <span id="pctPositive">0</span>%</span>
+                            <span>🔴 Negative: <span id="pctNegative">0</span>%</span>
+                            <span>⚪ Neutral: <span id="pctNeutral">0</span>%</span>
+                        </div>
+                        <div class="emotions-list" id="emotionsContainer" style="margin-top:16px"></div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="section-title"><span class="icon">🎭</span> Emotion Map</div>
+                        
+                        <!-- Chart.js Bar Chart -->
+                        <div class="chart-wrapper">
+                            <canvas id="emotionChart"></canvas>
+                        </div>
+                        
+                        <!-- Fallback container hidden -->
+                        <div id="emotionMapContainer" style="display:none"></div>
+                        
+                        <div class="controversy-row" style="border-bottom:none; margin-bottom:0; padding-bottom:0;">
+                            <div class="controversy-label tooltip-trigger">
+                                Controversy <span class="info-icon">ℹ️</span>
+                                <span class="tooltip-content">Measures community polarization and division. Low polarization means community agreement; high polarization means community is split and debating.</span>
+                            </div>
+                            <div class="controversy-track"><div id="controversyFill" class="controversy-fill" style="width:0%"></div></div>
+                        </div>
+                        <div id="controversyDriversContainer" style="margin-top:12px; font-size:0.8rem; display:none; border-top:1px dashed var(--border); padding-top:10px;">
+                            <div style="font-weight:600; color:var(--text-secondary); margin-bottom:6px;">Polarization Drivers:</div>
+                            <div id="controversyDriversList" style="display:flex; flex-direction:column; gap:6px; padding-left:2px;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ④ Key Entities -->
+                <div class="card" style="margin-top:16px">
+                    <div class="section-title"><span class="icon">🏷️</span> Key Entities</div>
+                    <div id="entitiesContainer"></div>
+                </div>
+
+                <!-- ⑤ Competitive Signals & Trends -->
+                <div class="results-grid" style="margin-top:16px">
+                    <div class="card">
+                        <div class="section-title"><span class="icon">⚔️</span> Competitive Signals</div>
+                        <div id="competitiveContainer"></div>
+                    </div>
+                    <div class="card">
+                        <div class="section-title"><span class="icon">📈</span> Trend Indicators</div>
+                        <div id="trendContainer"></div>
+                    </div>
+                </div>
+
+                <!-- ⑥ Actionable Insights -->
+                <div class="card" style="margin-top:16px">
+                    <div class="section-title"><span class="icon">💡</span> Actionable Insights</div>
+                    <div id="insightsContainer"></div>
+                </div>
+
+                <!-- ⑦ Report Metadata -->
+                <div class="card" style="margin-top:16px; position:relative">
+                    <div class="section-title" style="display:flex; justify-content:space-between; width:100%">
+                        <div><span class="icon">ℹ️</span> Report Metadata</div>
+                        <button id="downloadReportBtn" class="btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; display: none;" onclick="downloadCurrentReport()">📥 Download HTML Report</button>
+                    </div>
+                    <div id="metaInfo" style="font-size:0.82rem;color:var(--text-secondary);font-family:'JetBrains Mono',monospace"></div>
+                </div>
+            </div>
+
+            <!-- History -->
+            <div class="history-section card" style="margin-top:32px">
+                <div class="section-title"><span class="icon">🕐</span> Recent Analyses</div>
+                <div id="historyContainer">
+                    <p style="color:var(--text-secondary);font-size:0.9rem">No analyses yet. Try a query above!</p>
+                </div>
+            </div>
+            </div> <!-- End analysisResultsWrapper -->
+        </div>
+
+        <!-- ─────────────────── TAB 2: SUBREDDIT COMPARISON ─────────────────── -->
+        <div id="compare-content" class="tab-content">
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="section-title"><span class="icon">📊</span> Compare Subreddits Side-by-Side</div>
+                <p style="color:var(--text-secondary);margin-bottom:20px;font-size:0.9rem">Compare sentiment metrics, volume, and emotional signals of two different subreddits.</p>
+                
+                <div class="comp-select-section">
+                    <div class="comp-select-group">
+                        <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">Subreddit A</label>
+                        <select id="compareSubA" class="form-select"></select>
+                    </div>
+                    <div style="flex: 0 0 auto; align-self: flex-end; padding-bottom: 12px;">
+                        <span style="font-weight: 700; color: var(--text-muted);">VS</span>
+                    </div>
+                    <div class="comp-select-group">
+                        <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">Subreddit B</label>
+                        <select id="compareSubB" class="form-select"></select>
+                    </div>
+                    <button class="search-btn" style="height: 45px; align-self: flex-end;" onclick="runComparison()">Compare</button>
+                </div>
+            </div>
+
+            <div id="compareError" class="error-msg"></div>
+
+            <div id="compareLoader" class="card" style="display:none; text-align:center; padding: 40px 0;">
+                <div class="search-btn loading" style="background:transparent; margin:0 auto;"><div class="spinner" style="display:inline-block; width:30px; height:30px; border-top-color:var(--accent-orange)"></div></div>
+                <p style="margin-top: 16px; color: var(--accent-orange); font-weight: 600;">Generating comparative intelligence report...</p>
+            </div>
+
+            <!-- Comparison Results Content -->
+            <div id="compareResults" style="display:none;">
+                <div class="compare-columns">
+                    <!-- Column A -->
+                    <div class="compare-column">
+                        <div class="card" style="border-left: 4px solid var(--accent-orange)">
+                            <div class="comp-header-row">
+                                <div class="comp-title" id="compTitleA">r/SubredditA</div>
+                                <span class="sentiment-badge neutral" id="compSentA">Neutral</span>
+                            </div>
+                            <p id="compOneLinerA" style="font-size:0.95rem; line-height: 1.5; color: var(--text-primary); margin-bottom:14px; font-style:italic;"></p>
+                            
+                            <table class="comp-metric-table">
+                                <tr><td>Indexed Items</td><td id="compDocsA">0</td></tr>
+                                <tr><td>Timeline Range</td><td id="compDateA">N/A</td></tr>
+                                <tr><td>Avg Post Upvotes</td><td id="compScoreA">0</td></tr>
+                            </table>
+
+                            <div style="margin-top: 20px; font-size: 0.88rem; display:flex; flex-direction:column; gap:8px;">
+                                <div id="compDriverPosA" style="color:var(--text-secondary)"></div>
+                                <div id="compDriverNegA" style="color:var(--text-secondary)"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Column B -->
+                    <div class="compare-column">
+                        <div class="card" style="border-left: 4px solid var(--accent-steel)">
+                            <div class="comp-header-row">
+                                <div class="comp-title" id="compTitleB">r/SubredditB</div>
+                                <span class="sentiment-badge neutral" id="compSentB">Neutral</span>
+                            </div>
+                            <p id="compOneLinerB" style="font-size:0.95rem; line-height: 1.5; color: var(--text-primary); margin-bottom:14px; font-style:italic;"></p>
+                            
+                            <table class="comp-metric-table">
+                                <tr><td>Indexed Items</td><td id="compDocsB">0</td></tr>
+                                <tr><td>Timeline Range</td><td id="compDateB">N/A</td></tr>
+                                <tr><td>Avg Post Upvotes</td><td id="compScoreB">0</td></tr>
+                            </table>
+
+                            <div style="margin-top: 20px; font-size: 0.88rem; display:flex; flex-direction:column; gap:8px;">
+                                <div id="compDriverPosB" style="color:var(--text-secondary)"></div>
+                                <div id="compDriverNegB" style="color:var(--text-secondary)"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comparative Visual Analytics -->
+                <div class="results-grid" style="margin-top:20px;">
+                    <div class="card">
+                        <div class="section-title"><span class="icon">📊</span> Sentiment Share Comparison</div>
+                        <div class="chart-wrapper">
+                            <canvas id="compareSentimentChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="section-title"><span class="icon">🎭</span> Emotional Fingerprint Map</div>
+                        <div class="chart-wrapper chart-wrapper-radar">
+                            <canvas id="compareEmotionChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+    </div>
+
+    <!-- ─────────────────── MODAL DETAIL VIEWER ─────────────────── -->
+    <div class="modal-overlay" id="docDetailModal" onclick="closeDocDetailModal()">
+        <div class="modal-container" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title">Document Detail Summary</div>
+                <button class="modal-close" onclick="closeDocDetailModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-meta-grid">
+                    <div class="modal-meta-item">
+                        <strong>Source Subreddit</strong>
+                        <span id="modalSubreddit">r/subreddit</span>
+                    </div>
+                    <div class="modal-meta-item">
+                        <strong>Document ID</strong>
+                        <span id="modalDocId">doc_id</span>
+                    </div>
+                    <div class="modal-meta-item">
+                        <strong>Type</strong>
+                        <span id="modalType" class="doc-type-tag">post</span>
+                    </div>
+                    <div class="modal-meta-item">
+                        <strong>Score</strong>
+                        <span id="modalScore">⬆️ 0</span>
+                    </div>
+                    <div class="modal-meta-item">
+                        <strong>Publish Date</strong>
+                        <span id="modalDate">N/A</span>
+                    </div>
+                    <div class="modal-meta-item">
+                        <strong>Comment Depth</strong>
+                        <span id="modalDepth">0</span>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:16px;">
+                    <strong style="display:block; margin-bottom: 4px; font-size: 0.85rem; color: var(--text-secondary);">Thread Post Title:</strong>
+                    <div id="modalPostTitle" style="font-weight: 600; color: var(--text-primary);">Post Title</div>
+                </div>
+
+                <div style="margin-bottom:20px;">
+                    <strong style="display:block; margin-bottom: 4px; font-size: 0.85rem; color: var(--text-secondary);">Original Post URL:</strong>
+                    <a id="modalPostUrl" href="#" target="_blank" style="color:var(--accent-steel); text-decoration: underline; font-size: 0.88rem;">URL</a>
+                </div>
+
+                <div>
+                    <strong style="display:block; margin-bottom: 6px; font-size: 0.85rem; color: var(--text-secondary);">Document Text:</strong>
+                    <div class="modal-content-box" id="modalTextContent">
+                        Text Content...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Frontend logic controller -->
+    <script src="/static/app.js"></script>
+</body>
+
+</html>

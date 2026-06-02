@@ -1,0 +1,42 @@
+# Dependencies and Virtual Environments
+venv/
+.venv/
+node_modules/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment Variables and Sensitive Info
+.env
+*.env
+
+# Runtime and Database Files
+data/
+chroma_db/
+rag_ready_data/
+analysis_history.json
+*.sqlite3
+*.db
+*.log
+npm-debug.log*
+
+# Scratch and Temporary Files
+scratch/
+tmp/
+temp/
+
+# IDE and Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git Metadata
+.git/
+
+# OS Specific Files
+.DS_Store
+Thumbs.db

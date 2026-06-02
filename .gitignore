@@ -1,7 +1,14 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 .venv
+venv/
 .env
-rag_ready_data
-chroma_db/
 
+# Runtime data
+data/
+scratch/
+
+# Old locations (pre-reorg)
+rag_ready_data/
+chroma_db/
+analysis_history.json
