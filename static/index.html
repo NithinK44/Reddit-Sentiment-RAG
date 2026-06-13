@@ -328,19 +328,21 @@
             <div id="unifiedResults" class="results-section">
 
                 <!-- ① Verdict Hero -->
-                <div class="card" style="margin-bottom:16px">
+                <div class="card" style="margin-bottom:16px; border-top: 4px solid var(--accent-orange); background: linear-gradient(180deg, rgba(232,73,15,0.05) 0%, var(--bg-card) 100%);">
                     <div class="gauge-container">
-                        <div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px">
+                        <div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px; margin-bottom: 16px;">
                             <div id="sentimentBadge" class="sentiment-badge neutral">—</div>
                             <div id="netScoreBadge" class="net-score-badge zero"></div>
-                            <span id="modeBadgeLabel" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;background:var(--accent-orange-dim);color:var(--accent-orange);font-weight:700;letter-spacing:0.8px"></span>
-                            <span id="strategyBadgeLabel" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;background:var(--accent-steel-dim);color:var(--accent-steel);font-weight:700;letter-spacing:0.5px"></span>
-                            <span id="consensusBadge" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;font-weight:700;letter-spacing:0.5px;display:none"></span>
+                            <div style="display:flex; gap:6px">
+                                <span id="modeBadgeLabel" style="font-size:0.65rem;padding:3px 8px;border-radius:4px;background:var(--accent-orange-dim);color:var(--accent-orange);font-weight:800;letter-spacing:0.8px; border: 1px solid var(--accent-orange-border)"></span>
+                                <span id="strategyBadgeLabel" style="font-size:0.65rem;padding:3px 8px;border-radius:4px;background:var(--accent-steel-dim);color:var(--accent-steel);font-weight:800;letter-spacing:0.5px; border: 1px solid var(--accent-steel-dim)"></span>
+                                <span id="consensusBadge" style="font-size:0.65rem;padding:3px 8px;border-radius:4px;font-weight:800;letter-spacing:0.5px;display:none; border: 1px solid rgba(255,255,255,0.1)"></span>
+                            </div>
                         </div>
-                        <div id="oneLinerText" style="font-size:1.1rem;font-weight:600;color:var(--text-primary);margin:10px 0 4px"></div>
-                        <div class="gauge-confidence" id="confidenceText"></div>
+                        <div id="oneLinerText" style="font-size:1.4rem;font-weight:800;color:var(--text-primary);margin:0 0 8px; line-height:1.2; letter-spacing:-0.02em"></div>
+                        <div class="gauge-confidence" id="confidenceText" style="font-family:'JetBrains Mono'; font-size:0.8rem; opacity:0.8"></div>
                     </div>
-                    <div class="summary-text" id="summaryText"></div>
+                    <div class="summary-text" id="summaryText" style="font-size:1.1rem; line-height:1.7; border-top: 1px solid var(--border); padding-top: 20px;"></div>
                 </div>
 
                 <!-- ② Positive & Negative Signal Cards -->
