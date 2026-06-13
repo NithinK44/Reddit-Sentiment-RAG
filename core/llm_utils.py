@@ -11,6 +11,18 @@ def parse_llm_json(raw_output: str) -> dict | list:
     Handles Markdown code fences, trailing text, and nested structures
     by finding the first JSON-like structure and decoding it.
     """
+    if isinstance(raw_output, list):
+        # Merge parts if it's a list of blocks/parts
+        parts = []
+        for part in raw_output:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and "text" in part:
+                parts.append(part["text"])
+        raw_output = "".join(parts)
+    elif not isinstance(raw_output, str):
+        raw_output = str(raw_output)
+
     cleaned = raw_output.strip()
     
     # Fast path: if it looks like clean JSON, try parsing immediately
