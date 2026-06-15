@@ -218,13 +218,28 @@ def synthesize(state: SentimentState) -> dict:
             if len(team_insights) < 2:
                 errors.append(f"At least 2 actionable insights for {team} are required (got {len(team_insights)})")
         
-        # Enriched derived fields
-        report_dict["verdict"]["net_sentiment_score"] = int(pos - neg)
+        # Enriched derived fields — net_sentiment_score is a signed score from -100 to +100
+        report_dict["verdict"]["net_sentiment_score"] = max(-100, min(100, int(pos - neg)))
+        # Round confidence to 2 decimal places for cleanliness
+        if "confidence" in report_dict.get("verdict", {}):
+            report_dict["verdict"]["confidence"] = round(float(report_dict["verdict"]["confidence"]), 2)
+        
         dates = [m.get("post_date") for m in state["doc_metadata"] if m.get("post_date")]
         data_freshness = {
             "earliest_post": min(dates) if dates else None,
             "latest_post": max(dates) if dates else None,
         }
+        # Compute data age in days from latest post
+        if dates:
+            try:
+                from datetime import date as _date
+                latest = max(dates)
+                latest_d = _date.fromisoformat(latest)
+                data_freshness["data_age_days"] = (datetime.now().date() - latest_d).days
+            except Exception:
+                data_freshness["data_age_days"] = None
+        else:
+            data_freshness["data_age_days"] = None
         # Get actual model name and retry/fallback info from job context if available
         model_used = LLM_MODEL
         fallback_used = False

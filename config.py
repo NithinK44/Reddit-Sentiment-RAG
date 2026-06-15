@@ -353,7 +353,7 @@ def get_llm(temperature: float = 0.3, model_name: str = None):
                                     google_api_key=GOOGLE_API_KEY,
                                     temperature=temperature,
                                     max_output_tokens=10000,
-                                    api_version="v1",
+                                    client_args={"http_options": {"api_version": "v1"}},
                                 )
                                 return fallback_llm.invoke(*args, **kwargs)
                             except Exception as fallback_err:
@@ -401,7 +401,7 @@ def get_llm(temperature: float = 0.3, model_name: str = None):
                                     google_api_key=GOOGLE_API_KEY,
                                     temperature=temperature,
                                     max_output_tokens=10000,
-                                    api_version="v1",
+                                    client_args={"http_options": {"api_version": "v1"}},
                                 )
                                 return await fallback_llm.ainvoke(*args, **kwargs)
                             except Exception as fallback_err:
@@ -418,7 +418,7 @@ def get_llm(temperature: float = 0.3, model_name: str = None):
             google_api_key=GOOGLE_API_KEY,
             temperature=temperature,
             max_output_tokens=10000,
-            api_version="v1",
+            client_args={"http_options": {"api_version": "v1"}},
         )
     else:
         return _get_openrouter_llm(temperature=temperature, model_name=model_name)

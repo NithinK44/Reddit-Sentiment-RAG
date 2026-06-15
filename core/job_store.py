@@ -6,7 +6,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-JOB_TTL_SECONDS = 3600  # Completed/failed jobs are purged after 1 hour
+JOB_TTL_SECONDS = 900  # Completed/failed jobs are purged after 15 minutes
 
 class AnalysisJob:
     def __init__(self, job_id: str):

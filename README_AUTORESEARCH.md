@@ -74,3 +74,9 @@ python scratch/autoresearch_runner.py
 It will execute 5 iterations. You will see live Git diffs and score updates in the terminal console.
 If it finds a better prompt configuration, it commits it as a new Git commit.
 If it regresses, it automatically reverts the changes.
+
+### 4. View Run History
+A detailed optimization run log is automatically updated at the project root: [autoresearch_log.md](file:///c:/Users/nithi/OneDrive/Desktop/Antigravity/Reddit-Sentiment-RAG/autoresearch_log.md).
+This log contains:
+- A summary table displaying iteration status, scores, latency, retries, and pipeline failures.
+- Detailed iteration summaries containing proposed edits (JSON) and actual Git diffs for both successes and regressions.

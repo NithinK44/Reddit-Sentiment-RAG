@@ -129,6 +129,15 @@ def query_rag(question: str, n_results: int = 8, collection_name: str = "reddit_
         if USE_GOOGLE_STUDIO:
             model_used = GOOGLE_MODEL
 
+    # Compute data age in days from latest post
+    data_age_days = None
+    if dates:
+        try:
+            from datetime import date as _date
+            data_age_days = (_date.today() - _date.fromisoformat(max(dates))).days
+        except Exception:
+            pass
+
     return {
         "meta": {
             "report_id": str(uuid.uuid4()),
@@ -144,6 +153,7 @@ def query_rag(question: str, n_results: int = 8, collection_name: str = "reddit_
             "data_freshness": {
                 "earliest_post": min(dates) if dates else None,
                 "latest_post": max(dates) if dates else None,
+                "data_age_days": data_age_days,
             },
         },
         "verdict": {

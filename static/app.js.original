@@ -703,10 +703,8 @@ function renderUnifiedReport(mode, r) {
 
     const net = verdict.net_sentiment_score || 0;
     const netBadge = document.getElementById('netScoreBadge');
-    const netSign = net > 0 ? '+' : '';
-    netBadge.textContent = `${netSign}${net} pts`;
+    netBadge.textContent = net > 0 ? 'Positive' : (net < 0 ? 'Negative' : 'Neutral');
     netBadge.className = `net-score-badge ${net > 0 ? 'pos' : net < 0 ? 'neg' : 'zero'}`;
-    netBadge.title = 'Net Sentiment Score: Positive% − Negative% (−100 to +100)';
 
     document.getElementById('modeBadgeLabel').textContent = '🧠 DEEP';
     
@@ -853,26 +851,13 @@ function renderUnifiedReport(mode, r) {
         modelDisplay += ` <span class="sentiment-badge mixed" style="font-size: 0.65rem; padding: 2px 6px; margin: 0 0 0 4px; vertical-align: middle;">⏳ ${meta.retries_occurred}x Retried</span>`;
     }
 
-    // Data freshness age badge
-    let ageBadgeHtml = '';
-    if (freshness.data_age_days !== undefined && freshness.data_age_days !== null) {
-        const ageDays = freshness.data_age_days;
-        let ageColor = 'var(--accent-green)';
-        let ageBg = 'rgba(46,139,87,0.12)';
-        let ageBorder = 'rgba(46,139,87,0.28)';
-        let ageLabel = `${ageDays}d old`;
-        if (ageDays > 365) { ageColor = 'var(--accent-red)'; ageBg = 'rgba(192,57,43,0.12)'; ageBorder = 'rgba(192,57,43,0.28)'; ageLabel = `${Math.floor(ageDays/365)}y old`; }
-        else if (ageDays > 90) { ageColor = 'var(--accent-amber)'; ageBg = 'rgba(193,125,46,0.12)'; ageBorder = 'rgba(193,125,46,0.28)'; }
-        ageBadgeHtml = ` &nbsp;|&nbsp; <span style="font-size:0.75rem;padding:2px 8px;border-radius:5px;background:${ageBg};color:${ageColor};border:1px solid ${ageBorder};font-weight:700">📡 ${ageLabel}</span>`;
-    }
-
     document.getElementById('metaInfo').innerHTML =
         `🆔 ${meta.report_id ? meta.report_id.slice(0,8)+'...' : 'N/A'} &nbsp;|&nbsp;
          📢 r/${meta.collection || 'N/A'} &nbsp;|&nbsp;
          📄 ${meta.documents_analyzed||0} docs &nbsp;|&nbsp;
          🤖 ${modelDisplay} &nbsp;|&nbsp;
          🔀 ${meta.retrieval_strategy||'N/A'} &nbsp;|&nbsp;
-         📅 ${freshness.earliest_post||'?'} → ${freshness.latest_post||'?'}${ageBadgeHtml} &nbsp;|&nbsp;
+         📅 ${freshness.earliest_post||'?'} → ${freshness.latest_post||'?'} &nbsp;|&nbsp;
          🕐 ${meta.timestamp ? new Date(meta.timestamp).toLocaleString() : 'N/A'}`;
 
     document.getElementById('unifiedResults').classList.add('visible');
